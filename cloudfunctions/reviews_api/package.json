@@ -1,0 +1,9 @@
+{
+  "name": "reviews_api",
+  "version": "1.0.0",
+  "description": "DPCCA 公开评分/评论墙：注册用户上墙/下墙接口",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  }
+}

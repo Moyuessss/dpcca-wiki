@@ -1,0 +1,9 @@
+{
+  "name": "anime-api",
+  "version": "1.0.0",
+  "description": "2026 番剧追番库 - 多人评分 API",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  }
+}

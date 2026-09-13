@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DPCCA · 数据库操作模板</title>
+<!--
+  ============================================================
+  DPCCA · 数据库增删改查模板 (db-template.html)
+  腾讯云开发（CloudBase）文档型数据库 · Web SDK v2
+  ------------------------------------------------------------
+  用途：新增 / 查询 / 修改 / 删除 云数据库集合中的文档记录。
+  本页既是可视化操作工具，也是可复制的代码模板：
+  右侧「代码封装」区可直接复制到自己的页面使用。
+
+  【集合级操作说明】（本页不做，需另行处理）
+  - 新建集合：云开发控制台 → 数据库 → 新建集合；或使用云函数/CLI
+  - 删除集合：云开发控制台 → 数据库 → 删除集合（不可恢复，谨慎）
+  - Web SDK 客户端不支持创建/删除集合，只能操作集合内的文档。
+
+  【安全规则提醒】
+  - 匿名登录用户对集合的读写权限由「安全规则」控制。
+  - 若操作报权限不足：在控制台调整集合安全规则，或用云函数执行。
+  ============================================================
+-->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/2.32.0/cloudbase.full.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --card: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.1);
+    --text: #e8ecf8;
+    --muted: #9aa3bd;
+    --primary: #6d5dfc;
+    --primary2: #b44cff;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 80% -10%, rgba(109, 93, 252, .22), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(180, 76, 255, .16), transparent 60%),
+                var(--bg);
+    color: var(--text);
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #6d5dfc, #b44cff); border-radius: 4px; }
+
+  .glass {
+    background: var(--card);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .gradient-text {
+    background: linear-gradient(90deg, #6d5dfc, #b44cff, #5ee7df);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 12px; cursor: pointer;
+    font-size: 14px; font-weight: 600; border: 1px solid var(--border);
+    background: rgba(255,255,255,.08); color: var(--text);
+    transition: all .25s ease; user-select: none;
+  }
+  .btn:hover { transform: translateY(-2px); border-color: rgba(109,93,252,.6); box-shadow: 0 6px 20px rgba(109,93,252,.25); }
+  .btn-primary { background: linear-gradient(135deg, #6d5dfc, #b44cff); border: none; }
+  .btn-primary:hover { box-shadow: 0 8px 24px rgba(109,93,252,.4); }
+  .btn-danger { background: linear-gradient(135deg, #ef4444, #b91c1c); border: none; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(18px); background: rgba(10,14,26,.8); border-bottom: 1px solid var(--border); }
+  .input {
+    width: 100%; background: rgba(255,255,255,.05); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color .2s; font-family: inherit;
+  }
+  .input:focus { border-color: rgba(109,93,252,.6); }
+  textarea.input { font-family: "Consolas", "Menlo", monospace; font-size: 13px; line-height: 1.6; resize: vertical; }
+  .code {
+    font-family: "Consolas", "Menlo", monospace; font-size: 12.5px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word; color: #c9d2ea;
+  }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .tag-ok { background: rgba(52,211,153,.15); color: var(--ok); }
+  .tag-err { background: rgba(248,113,113,.15); color: var(--err); }
+  .tag-warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .dot.off { background: #4a5570; }
+  .toast-container { position: fixed; top: 72px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
+  .toast {
+    min-width: 240px; max-width: 380px; padding: 12px 16px; border-radius: 12px;
+    background: rgba(20,26,44,.95); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; animation: slideIn .3s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  .toast.ok { border-color: rgba(52,211,153,.5); }
+  .toast.err { border-color: rgba(248,113,113,.5); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  .section-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .section-title i { color: var(--primary); }
+</style>
+</head>
+<body>
+
+<!-- 导航栏 -->
+<nav class="nav">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style="background:linear-gradient(135deg,#6d5dfc,#b44cff)">🗄️</div>
+      <div>
+        <div class="font-bold text-sm">数据库操作模板</div>
+        <div class="text-[11px] text-gray-500">CloudBase 文档数据库 · 增 / 查 / 改 / 删</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-gray-400">
+      <span style="display:inline-flex;align-items:center;gap:3px;padding:1px 8px;border-radius:999px;font-size:10px;font-weight:700;line-height:14px;letter-spacing:.3px;color:#4a3d8f;background:linear-gradient(90deg,#e2dcff,#c9beff);border:1px solid #a99aef;white-space:nowrap" title="DPCCA · 测试版 v1.0（2026-09-07）">测试版 v1.0</span>
+      <span class="dot" id="cloudDot"></span>
+      <span id="cloudLabel">连接中…</span>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-2 gap-6">
+
+  <!-- ==================== 左侧：可视化操作区 ==================== -->
+  <div class="space-y-6">
+    <!-- 集合选择 -->
+    <div class="glass p-4">
+      <div class="section-title"><i class="fa-solid fa-table"></i>集合（表）</div>
+      <div class="flex gap-2">
+        <input id="collName" class="input flex-1" placeholder="例如 room_sessions / anime_library / user_profiles" value="room_sessions" autocomplete="off">
+        <button class="btn btn-primary flex-none" onclick="setCollection()"><i class="fa-solid fa-check"></i>使用</button>
+      </div>
+      <div class="text-[11px] text-gray-500 mt-2">
+        新建/删除集合需到 <a class="underline" href="https://console.cloud.tencent.com/tcb/database" target="_blank">云开发控制台 → 数据库</a> 操作，本页面只操作集合内的文档。
+      </div>
+    </div>
+
+    <!-- 新增 -->
+    <div class="glass p-4">
+      <div class="section-title"><i class="fa-solid fa-plus-circle"></i>新增（增）</div>
+      <div class="text-[12px] text-gray-500 mb-2">留空 <b>_id</b> 自动生成；填写则使用指定 ID 创建（重复会覆盖，即 upsert）。</div>
+      <textarea id="addData" class="input" rows="5" placeholder='{"title":"示例标题","score":8,"tags":["示例"],"createdAt":"2026-01-01"}'></textarea>
+      <div class="flex gap-2 mt-3">
+        <input id="addId" class="input flex-1" placeholder="_id（可选，如 custom_001）" autocomplete="off">
+        <button class="btn btn-primary flex-none" onclick="doAdd()"><i class="fa-solid fa-plus"></i>新增</button>
+      </div>
+    </div>
+
+    <!-- 查询 -->
+    <div class="glass p-4">
+      <div class="section-title"><i class="fa-solid fa-magnifying-glass"></i>查询（查）</div>
+      <div class="flex gap-2 mb-2">
+        <input id="qId" class="input flex-1" placeholder="按 _id 查询（可选）" autocomplete="off">
+        <button class="btn flex-none" onclick="doGetById()"><i class="fa-solid fa-file"></i>按ID</button>
+      </div>
+      <textarea id="qWhere" class="input" rows="3" placeholder='条件 JSON（可选），如 {"score": {"$gte": 8}} 或 {"phase": "lobby"}'></textarea>
+      <div class="flex gap-2 mt-3">
+        <select id="qOrder" class="input flex-1" style="max-width:140px">
+          <option value="">不限排序</option>
+          <option value="asc">升序</option>
+          <option value="desc">降序</option>
+        </select>
+        <input id="qOrderField" class="input flex-1" placeholder="排序字段（如 createdAt）" autocomplete="off">
+        <input id="qLimit" class="input" style="max-width:90px" type="number" min="1" max="100" value="20" title="返回条数">
+        <button class="btn btn-primary flex-none" onclick="doQuery()"><i class="fa-solid fa-play"></i>查询</button>
+      </div>
+    </div>
+
+    <!-- 修改 -->
+    <div class="glass p-4">
+      <div class="section-title"><i class="fa-solid fa-pen"></i>修改（改）</div>
+      <div class="text-[12px] text-gray-500 mb-2">按 <b>_id</b> 更新字段；支持 $inc/$set/$push 等命令（见代码封装区）。</div>
+      <div class="flex gap-2 mb-2">
+        <input id="updId" class="input flex-1" placeholder="要修改的 _id" autocomplete="off">
+        <input id="updWhere" class="input flex-1" placeholder="或用条件定位（二选一）" autocomplete="off">
+      </div>
+      <textarea id="updData" class="input" rows="3" placeholder='{"score": 9, "status": "done"}'></textarea>
+      <button class="btn btn-primary mt-3" onclick="doUpdate()"><i class="fa-solid fa-pen"></i>更新</button>
+    </div>
+
+    <!-- 删除 -->
+    <div class="glass p-4" style="border-color:rgba(248,113,113,.3)">
+      <div class="section-title" style="color:var(--err)"><i class="fa-solid fa-trash"></i>删除（删）</div>
+      <div class="text-[12px] text-gray-500 mb-2">按 <b>_id</b> 删除，或用条件批量删除。<b class="text-red-400">不可恢复，请谨慎！</b></div>
+      <div class="flex gap-2">
+        <input id="delId" class="input flex-1" placeholder="要删除的 _id" autocomplete="off">
+        <button class="btn btn-danger flex-none" onclick="doDelete()"><i class="fa-solid fa-trash"></i>删除</button>
+      </div>
+      <div class="flex gap-2 mt-2">
+        <input id="delWhere" class="input flex-1" placeholder="或条件批量删除，如 {\"phase\": \"finished\"}" autocomplete="off">
+        <button class="btn btn-danger flex-none" onclick="doDeleteWhere()"><i class="fa-solid fa-trash-can"></i>批量删</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 右侧：结果区 + 代码模板 ==================== -->
+  <div class="space-y-6">
+    <!-- 查询结果 -->
+    <div class="glass p-4">
+      <div class="section-title">
+        <i class="fa-solid fa-list"></i>查询结果
+        <span class="tag tag-ok text-[11px] ml-auto" id="resultCount">0 条</span>
+      </div>
+      <div id="resultBox" class="code max-h-[420px] overflow-y-auto p-3 rounded-xl" style="background:rgba(0,0,0,.3)">暂无数据，点击上方「查询」。</div>
+    </div>
+
+    <!-- 可复制代码模板 -->
+    <div class="glass p-4">
+      <div class="section-title">
+        <i class="fa-solid fa-copy"></i>代码封装模板
+        <button class="btn text-[11px] ml-auto py-1 px-3" onclick="copyTemplate()"><i class="fa-solid fa-copy"></i>复制全部</button>
+      </div>
+      <div class="text-[12px] text-gray-500 mb-3">复制到任意页面即可使用，与本项目数据层（dataProvider）写法一致。</div>
+      <pre id="templateCode" class="code max-h-[460px] overflow-y-auto p-3 rounded-xl" style="background:rgba(0,0,0,.3)">// ============================================================
+// CloudBase 文档数据库 CRUD 封装（Web SDK v2）
+// 与 Dpcca/rating.html 的 dataProvider 完全同构
+// ============================================================
+const ENV_ID = "dpcca-wiki-d7g0dl19y23cd30f3";
+
+let _app = null, _auth = null, _db = null;
+
+/** 初始化数据库（幂等），返回 db 实例 */
+async function getDB() {
+  if (_db) return _db;
+  if (typeof cloudbase === "undefined")
+    throw new Error("请先引入 @cloudbase/js-sdk");
+  _app = cloudbase.init({ env: ENV_ID });
+  _auth = _app.auth({ persistence: "local" });
+  if (!_auth.hasLoginState()) {
+    await _auth.anonymousAuthProvider().signIn(); // 匿名登录
+  }
+  _db = _app.database();
+  return _db;
+}
+
+/** 命令操作符（$inc / $push / $gt 等） */
+async function cmd() {
+  const db = await getDB();
+  return db.command;
+}
+
+// ---------- 增 ----------
+/** 新增文档，返回新文档 _id；docId 可选，指定则用该 ID（存在则覆盖） */
+async function addDoc(collection, data, docId) {
+  const db = await getDB();
+  const res = docId
+    ? await db.collection(collection).doc(docId).set(data)
+    : await db.collection(collection).add({ data });
+  return docId || res.id;
+}
+
+// ---------- 查 ----------
+/** 查询全部（默认 20 条） */
+async function listDocs(collection, limit = 20) {
+  const db = await getDB();
+  const res = await db.collection(collection).limit(limit).get();
+  return res.data;
+}
+
+/** 按 _id 查询，返回文档或 null */
+async function getDoc(collection, id) {
+  const db = await getDB();
+  const res = await db.collection(collection).doc(id).get();
+  const item = Array.isArray(res.data) ? res.data[0] : res.data;
+  return item || null;
+}
+
+/** 条件查询；where 传普通对象（支持 $gt/$in/$and 等，见下方示例） */
+async function queryDocs(collection, where, { orderField, order = "asc", limit = 20 } = {}) {
+  const db = await getDB();
+  let q = db.collection(collection);
+  if (where && Object.keys(where).length) q = q.where(where);
+  if (orderField) q = q.orderBy(orderField, order);
+  const res = await q.limit(limit).get();
+  return res.data;
+}
+
+// ---------- 改 ----------
+/** 按 _id 更新部分字段；data 支持命令操作符值 */
+async function updateDoc(collection, id, data) {
+  const db = await getDB();
+  const res = await db.collection(collection).doc(id).update(data);
+  return res.updated; // 更新的记录数
+}
+
+/** 条件批量更新 */
+async function updateDocsWhere(collection, where, data) {
+  const db = await getDB();
+  const res = await db.collection(collection).where(where).update(data);
+  return res.updated;
+}
+
+// ---------- 删 ----------
+/** 按 _id 删除 */
+async function removeDoc(collection, id) {
+  const db = await getDB();
+  await db.collection(collection).doc(id).remove();
+  return true;
+}
+
+/** 条件批量删除 */
+async function removeDocsWhere(collection, where) {
+  const db = await getDB();
+  await db.collection(collection).where(where).remove();
+  return true;
+}
+
+// ============================================================
+// 使用示例
+// ============================================================
+// await addDoc("my_coll", { title: "示例", n: 1 });
+// await addDoc("my_coll", { title: "示例2", n: 5 }, "custom_id_001");
+// await listDocs("my_coll", 50);
+// await getDoc("my_coll", "custom_id_001");
+// await queryDocs("my_coll", { n: { $gt: 3 } }, { orderField: "n", order: "desc", limit: 10 });
+// const _ = await cmd();
+// await updateDoc("my_coll", "custom_id_001", { n: _.inc(1), tags: _.push("新标签") });
+// await removeDoc("my_coll", "custom_id_001");
+// await removeDocsWhere("my_coll", { n: { $lt: 0 } });
+//
+// 常用查询操作符：
+// $eq 等于 | $ne 不等于 | $gt 大于 | $gte 大于等于 | $lt 小于 | $lte 小于等于
+// $in 在列表中 | $nin 不在列表中 | $and 且 | $or 或 | $exists 字段存在
+// 例：{ $or: [{ a: 1 }, { b: 2 }] }
+// 更新操作符：$inc 自增 | $push 追加数组 | $pull 移除数组元素 | $set 设值 | $mul 乘
+// ============================================================</pre>
+    </div>
+  </div>
+</main>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script>
+/* ============================================================
+ * 数据层：复用 rating.html 的 dataProvider._cloud 模式
+ * ============================================================ */
+const ENV_ID = "dpcca-wiki-d7g0dl19y23cd30f3";
+
+const db = {
+  _app: null, _auth: null, _db: null,
+  async getDB() {
+    if (this._db) return this._db;
+    if (typeof cloudbase === "undefined") throw new Error("未引入 @cloudbase/js-sdk");
+    this._app = cloudbase.init({ env: ENV_ID });
+    this._auth = this._app.auth({ persistence: "local" });
+    if (!this._auth.hasLoginState()) {
+      await this._auth.anonymousAuthProvider().signIn();
+    }
+    this._db = this._app.database();
+    return this._db;
+  },
+};
+
+/* 工具函数 */
+const $ = (id) => document.getElementById(id);
+function toast(msg, type = "ok") {
+  const box = $("toastContainer");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function safeJsonParse(str) {
+  if (!str || !str.trim()) return {};
+  return JSON.parse(str);
+}
+let currentColl = "room_sessions";
+
+function setCollection() {
+  const name = $("collName").value.trim();
+  if (!name) return toast("请输入集合名", "err");
+  currentColl = name;
+  toast(`已切换到集合：${name}`);
+}
+
+/* ---------- 增 ---------- */
+async function doAdd() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  try {
+    const data = safeJsonParse($("addData").value);
+    if (!data || typeof data !== "object" || Array.isArray(data))
+      return toast("新增数据必须是 JSON 对象", "err");
+    const docId = $("addId").value.trim() || undefined;
+    const dbh = await db.getDB();
+    const res = docId
+      ? await dbh.collection(currentColl).doc(docId).set(data)
+      : await dbh.collection(currentColl).add({ data });
+    toast(`新增成功，_id：${docId || res.id}`);
+    $("addData").value = "";
+    $("addId").value = "";
+    doQuery();
+  } catch (e) {
+    toast("新增失败：" + (e.message || e), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- 查 ---------- */
+async function doGetById() {
+  const id = $("qId").value.trim();
+  if (!id) return toast("请输入要查询的 _id", "err");
+  try {
+    const dbh = await db.getDB();
+    const res = await dbh.collection(currentColl).doc(id).get();
+    const item = Array.isArray(res.data) ? res.data[0] : res.data;
+    showResult(item ? [item] : [], `按 _id=${id} 查询`);
+  } catch (e) {
+    showResult([], "查询出错：" + (e.message || e));
+  }
+}
+
+async function doQuery() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  try {
+    let where = {};
+    try {
+      where = safeJsonParse($("qWhere").value);
+    } catch (e) {
+      return toast("条件 JSON 格式错误：" + e.message, "err");
+    }
+    const orderField = $("qOrderField").value.trim();
+    const order = $("qOrder").value || "asc";
+    const limit = Math.min(parseInt($("qLimit").value) || 20, 100);
+    const dbh = await db.getDB();
+    let q = dbh.collection(currentColl);
+    if (Object.keys(where).length) q = q.where(where);
+    if (orderField) q = q.orderBy(orderField, order);
+    const res = await q.limit(limit).get();
+    showResult(res.data, `条件查询（${limit} 条上限）`);
+  } catch (e) {
+    showResult([], "查询出错：" + (e.message || e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showResult(list, label) {
+  $("resultCount").textContent = `${list.length} 条`;
+  if (list.length === 0) {
+    $("resultBox").textContent = "（无结果）" + (label.startsWith("查询出错") ? " —— " + label : "");
+    return;
+  }
+  $("resultBox").textContent = JSON.stringify(list, null, 2);
+  toast(`查询成功：${label}，共 ${list.length} 条`);
+}
+
+/* ---------- 改 ---------- */
+async function doUpdate() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  try {
+    const id = $("updId").value.trim();
+    const whereStr = $("updWhere").value.trim();
+    if (!id && !whereStr) return toast("请填写 _id 或条件", "err");
+    let data;
+    try {
+      data = safeJsonParse($("updData").value);
+    } catch (e) {
+      return toast("更新数据 JSON 格式错误：" + e.message, "err");
+    }
+    const dbh = await db.getDB();
+    let updated;
+    if (id) {
+      const res = await dbh.collection(currentColl).doc(id).update(data);
+      updated = res.updated;
+    } else {
+      const res = await dbh.collection(currentColl).where(safeJsonParse(whereStr)).update(data);
+      updated = res.updated;
+    }
+    toast(`更新成功，影响 ${updated} 条`);
+    $("updData").value = "";
+    doQuery();
+  } catch (e) {
+    toast("更新失败：" + (e.message || e), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- 删 ---------- */
+async function doDelete() {
+  const id = $("delId").value.trim();
+  if (!id) return toast("请输入要删除的 _id", "err");
+  if (!confirm(`确定删除集合 ${currentColl} 中 _id=${id} 的文档？此操作不可恢复！`)) return;
+  try {
+    const dbh = await db.getDB();
+    await dbh.collection(currentColl).doc(id).remove();
+    toast(`已删除 _id=${id}`);
+    $("delId").value = "";
+    doQuery();
+  } catch (e) {
+    toast("删除失败：" + (e.message || e), "err");
+  }
+}
+
+async function doDeleteWhere() {
+  const str = $("delWhere").value.trim();
+  if (!str) return toast("请输入删除条件", "err");
+  let where;
+  try {
+    where = safeJsonParse(str);
+  } catch (e) {
+    return toast("条件 JSON 格式错误：" + e.message, "err");
+  }
+  if (!confirm(`确定删除集合 ${currentColl} 中满足 ${str} 的所有文档？此操作不可恢复！`)) return;
+  try {
+    const dbh = await db.getDB();
+    await dbh.collection(currentColl).where(where).remove();
+    toast("批量删除完成");
+    $("delWhere").value = "";
+    doQuery();
+  } catch (e) {
+    toast("删除失败：" + (e.message || e), "err");
+  }
+}
+
+/* ---------- 复制模板 ---------- */
+function copyTemplate() {
+  const text = $("templateCode").textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => toast("代码模板已复制到剪贴板"))
+    .catch(() => toast("复制失败，请手动选择复制", "err"));
+}
+
+/* ---------- 初始化 ---------- */
+(async function init() {
+  const dot = $("cloudDot"), label = $("cloudLabel");
+  try {
+    await db.getDB();
+    dot.classList.add("on");
+    label.textContent = "云端已连接";
+    // 自动加载默认集合数据
+    doQuery().catch(() => {});
+  } catch (e) {
+    dot.classList.add("off");
+    label.textContent = "云端不可用：" + (e.message || e);
+    toast("云端连接失败：" + (e.message || e), "err");
+  }
+  // 回车快捷操作
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === "addData" || t.id === "updData" || t.id === "qWhere") {
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); t.id === "addData" ? doAdd() : t.id === "updData" ? doUpdate() : doQuery(); }
+    } else if (t.id === "collName") setCollection();
+    else if (t.id === "addId") doAdd();
+    else if (t.id === "qId") doGetById();
+    else if (t.id === "qOrderField" || t.id === "qLimit") doQuery();
+    else if (t.id === "updId") doUpdate();
+    else if (t.id === "delId") doDelete();
+    else if (t.id === "delWhere") doDeleteWhere();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "feedback_api",
+  "version": "1.0.0",
+  "description": "DPCCA 用户反馈：注册 D 账号提交反馈（submit），反馈写入 feedback 集合",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  }
+}

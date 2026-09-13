@@ -1,0 +1,9 @@
+{
+  "name": "admin_login",
+  "version": "1.0.0",
+  "description": "DPCCA 管理后台账号密码登录（自定义登录签发 Ticket）",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  }
+}

@@ -1,0 +1,2433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>DPCCA 多人番剧联合评分室</title>
+<!--
+  ============================================================
+  DPCCA · 多人番剧联合评分室 (rating.html)
+  腾讯云开发（CloudBase）接入说明：
+  1. 已通过 <script> 引入 @cloudbase/js-sdk
+  2. 环境 ID：dpcca-wiki-d7g0dl19y23cd30f3
+  3. 数据层统一封装在 dataProvider（USE_CLOUD = true 使用云端）
+  4. 云数据库集合：anime_library（公共番剧库）
+                    user_profiles（用户昵称，按 openid 隔离）
+                    room_sessions（房间实时数据，watch 实时同步）
+  5. 匿名登录已开启，代码自动处理
+  ============================================================
+-->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/2.32.0/cloudbase.full.js"></script>
+<script src="auth.js?v=5"></script>
+<script src="announcement.js?v=1"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f0e6;
+    --card: #fdfaf4;
+    --border: #e6dcc8;
+    --text: #5c4a3d;
+    --muted: #a8988a;
+    --primary: #d4c4a8;
+    --primary-hover: #c2ae8c;
+    --primary-soft: #efe7d9;
+    --ok: #7d8f69;
+    --warn: #c09a5b;
+    --err: #b06a5a;
+    --shadow: 0 4px 14px rgba(92, 74, 61, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d4c4a8; border-radius: 4px; }
+
+  .glass {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .gradient-text {
+    color: #c2ae8c;
+    background: none;
+    -webkit-text-fill-color: initial;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 8px; cursor: pointer;
+    font-size: 14px; font-weight: 500; border: 1px solid var(--border);
+    background: #fffdf8; color: var(--text);
+    transition: all .2s ease; user-select: none;
+  }
+  .btn:hover { background: var(--primary-soft); }
+  .btn-primary { background: var(--primary); border-color: transparent; color: #4a3a2e; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(245,240,230,.92); border-bottom: 1px solid var(--border); }
+  .input {
+    width: 100%; background: #fffdf8; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color .2s;
+  }
+  .input:focus { border-color: #c2ae8c; }
+
+  .member-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--primary-soft); border: 1px solid var(--border); }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #4a3a2e; flex: none; background: var(--primary); }
+  .cover-img { width: 100%; height: 100%; object-fit: cover; }
+  .cover-emoji { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: #cdbfaa; }
+
+  .star { cursor: pointer; font-size: 24px; color: #d9cbb4; transition: all .2s ease; }
+  .star.active { color: var(--warn); }
+  .star:hover { transform: scale(1.15); }
+  .star.half { color: transparent; background: linear-gradient(90deg, var(--warn) 50%, #d9cbb4 50%); -webkit-background-clip: text; background-clip: text; }
+  .star-hint { color: #c8a25c; font-weight: 800; font-size: 15px; margin-left: 10px; align-self: center; white-space: nowrap; text-shadow: 0 0 10px rgba(192,154,91,.35); }
+  input[type=range] { width: 100%; accent-color: var(--warn); }
+
+  .step-done { color: var(--ok); }
+  .step-pending { color: var(--muted); }
+
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(92,74,61,.35); }
+  .modal-overlay.show { display: flex; animation: fadeIn .25s ease; }
+  .modal { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; animation: slideUp .35s cubic-bezier(.16,1,.3,1); }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  .toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .toast { padding: 12px 22px; border-radius: 10px; background: #fffdf8; border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; color: var(--text); animation: slideUp .3s ease; }
+  .toast.error { border-color: rgba(176,106,90,.5); color: var(--err); }
+  .toast.ok { border-color: rgba(125,143,105,.5); color: var(--ok); }
+
+  .rank-row { transition: transform .25s ease; }
+  .rank-row:hover { transform: scale(1.02); }
+
+  .cloud-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(125,143,105,.4); color: #5f7350; background: rgba(125,143,105,.08); }
+  .cloud-badge.off { border-color: var(--border); color: var(--muted); background: transparent; }
+
+  /* ===== Tailwind 颜色类覆盖（日式简约暖色系） ===== */
+  .text-gray-400 { color: var(--muted) !important; }
+  .text-gray-500 { color: #b3a08e !important; }
+  .text-gray-300 { color: #8a7766 !important; }
+  .text-gray-600 { color: #7a6857 !important; }
+  .text-indigo-400, .text-indigo-300 { color: #b0906a !important; }
+  .text-amber-400 { color: var(--warn) !important; }
+  .text-emerald-400 { color: var(--ok) !important; }
+  .text-orange-400 { color: #c07f5a !important; }
+  .text-white { color: #4a3a2e !important; }
+  .bg-white\/5 { background-color: var(--primary-soft) !important; }
+  .bg-white\/10 { background-color: #eae1d0 !important; }
+  .bg-white\/\[\.06\] { background-color: var(--primary-soft) !important; }
+  .border-white\/10 { border-color: var(--border) !important; }
+  .bg-emerald-400 { background-color: #a5b28a !important; }
+  .bg-indigo-400 { background-color: #c9b893 !important; }
+  .bg-gradient-to-r { background-image: none !important; background-color: var(--primary) !important; }
+  .placeholder-gray-500::placeholder { color: #b3a08e !important; }
+  .hover\:bg-white\/10:hover { background-color: #eae1d0 !important; }
+
+  /* ===== 移动端适配 ===== */
+  @media (max-width: 640px) {
+    .modal { width: 97vw; }
+    .nav-hide-mobile { display: none; }
+
+    /* 导航精简：云状态只显示图标 */
+    .cloud-badge { padding: 3px 8px; font-size: 10px; }
+    .cloud-badge span { display: none; }
+    .nav .btn { padding: 8px 12px; font-size: 13px; }
+    .nav .font-bold.text-lg { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 导航防溢出：左侧文字可收缩截断，右侧按钮组不收缩 */
+    .nav > div > div:first-child { min-width: 0; }
+    .nav > div > div:last-child { flex: none; }
+
+    /* 各集评分输入框加大（避免 iOS 聚焦缩放 + 触控面积小） */
+    #epsGrid label > span { font-size: 11px !important; }
+    .eps-score-input { font-size: 16px !important; padding: 9px 4px !important; }
+
+    /* 星星评分触控加大 */
+    .star { font-size: 26px; }
+    .star-hint { font-size: 13px; margin-left: 6px; }
+
+    /* 统计卡片紧凑 */
+    #statsBody .glass.p-4 { padding: 10px 6px; }
+    #statsBody .text-2xl { font-size: 21px; }
+
+    /* 大厅配置按钮加大 */
+    #cfgModes .btn { padding: 9px 14px; }
+
+    /* 成员行触控友好 */
+    .member-row { padding: 10px 10px; }
+
+    /* 弹窗内边距紧凑 */
+    .modal.glass { padding: 18px 14px; }
+
+    /* 触屏设备 hover 效果去掉 */
+    .rank-row:hover { transform: none; }
+  }
+
+  /* 超小屏（<380px）进一步精简导航文字 */
+  @media (max-width: 380px) {
+    .nav .gradient-text { display: none; }
+  }
+
+  /* ============================================================
+     v3.0 评论框：加宽 + 输入自动换行 + 右下角点击放大/还原
+     ============================================================ */
+  .cmt-wrap { position: relative; display: block; width: 100%; }
+  .cmt-wrap .cmt-area {
+    display: block; width: 100%; resize: vertical; overflow-y: auto;
+    min-height: 42px; max-height: 170px;
+    line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; padding-right: 34px;
+    transition: border-color .15s ease, max-height .15s ease;
+  }
+  .cmt-wrap.grown .cmt-area { max-height: 420px; }
+  .cmt-wrap .cmt-grow {
+    position: absolute; right: 6px; bottom: 6px; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 8px; cursor: pointer; z-index: 2;
+    background: rgba(92, 74, 61, .12); color: #8a7a6c; font-size: 11px; line-height: 1;
+  }
+  .cmt-wrap .cmt-grow:hover { background: rgba(92, 74, 61, .26); color: #4a3a2e; }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<nav class="nav">
+  <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold"
+           style="background:#d4c4a8;color:#4a3a2e">R</div>
+      <div>
+        <div class="font-bold text-lg leading-tight">DPCCA <span class="gradient-text">联合评分室</span></div>
+        <div class="text-[11px] text-gray-400 leading-none nav-hide-mobile">多人番剧评分 · 实时同步</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="hidden sm:inline-flex items-center" style="gap:3px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;line-height:14px;letter-spacing:.3px;color:#6b4f2a;background:linear-gradient(90deg,#eeddb8,#dcbf8a);border:1px solid #cdab72;white-space:nowrap" title="DPCCA · 测试版 v3.0（2026-09-14）">测试版 v3.0</span>
+      <span id="cloudBadge" class="cloud-badge off"><i class="fa-solid fa-cloud"></i><span>连接中</span></span>
+      <a href="index.html" class="btn btn-primary nav-hide-mobile"><i class="fa-solid fa-book"></i> 追番评分库</a>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 py-6">
+
+  <!-- 进入页 -->
+  <div id="entryView" class="max-w-md mx-auto mt-10">
+    <div class="glass p-8 text-center mb-6">
+      <div class="text-6xl mb-4" style="animation:pulse 2s ease-in-out infinite">🎬</div>
+      <h1 class="text-2xl font-bold mb-1">多人番剧联合评分室</h1>
+      <p class="text-gray-400 text-sm mb-6">创建房间邀请朋友，一起为本季度番剧打分！</p>
+      <input id="nickInput" type="text" placeholder="输入你的昵称" class="input mb-4">
+      <button class="btn btn-primary w-full mb-3" onclick="createRoom()"><i class="fa-solid fa-plus"></i> 创建房间</button>
+      <div class="flex items-center gap-3 my-4"><div class="flex-1 h-px bg-white/10"></div><span class="text-xs text-gray-500">或</span><div class="flex-1 h-px bg-white/10"></div></div>
+      <div class="flex gap-2">
+        <input id="roomInput" type="text" placeholder="输入房间号" class="input flex-1 uppercase">
+        <button class="btn" onclick="joinRoomFromInput()"><i class="fa-solid fa-right-to-bracket"></i> 加入</button>
+      </div>
+      <!-- v3.0：房间启用密码锁时展开（首次点「加入」后出现） -->
+      <div id="joinPwdWrap" class="hidden mt-3 text-left">
+        <div class="text-xs text-gray-500 mb-1"><i class="fa-solid fa-lock mr-1"></i>该房间已启用密码锁，请输入密码后再次点击「加入」</div>
+        <input id="joinPwdInput" type="password" placeholder="房间密码" class="input w-full" maxlength="20" autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <!-- 房间大厅 -->
+  <div id="lobbyView" class="hidden">
+    <div class="flex flex-col lg:flex-row gap-6">
+      <div class="flex-1 min-w-0">
+        <div class="glass p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <div class="text-xs text-gray-500 mb-1">房间号</div>
+              <div class="font-mono text-2xl font-bold tracking-widest gradient-text" id="roomIdText">------</div>
+              <div id="roomLockBadge" class="text-[11px] text-gray-500 mt-1 hidden"></div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button class="btn" onclick="copyInvite()"><i class="fa-solid fa-link"></i> 复制邀请链接</button>
+              <button class="btn btn-primary" id="startBtn" onclick="startVoting()"><i class="fa-solid fa-play"></i> 开始评分</button>
+              <button class="btn" onclick="exitRoom()"><i class="fa-solid fa-arrow-right-from-bracket"></i> 退出房间</button>
+            </div>
+          </div>
+          <!-- 房间设置（仅房主）：v3.0 密码锁 + 房间号隐藏，位置在房间配置上方 -->
+          <div id="ownerSecurity" class="glass p-4 mb-4">
+            <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-shield-halved mr-2 text-indigo-400"></i>房间设置（仅房主）</div>
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+              <span class="text-xs text-gray-500">密码锁状态：</span>
+              <span id="lockState" class="text-xs text-gray-400">未开启</span>
+            </div>
+            <!-- 未开启密码锁时，这里只显示这一个按钮 -->
+            <button class="btn btn-primary" id="lockOnBtn" onclick="openLockPanel()"><i class="fa-solid fa-lock"></i> 开启密码锁</button>
+            <!-- 点击「开启密码锁」后才展开：设置密码的输入框 + 保存/修改按钮 + 关闭密码锁 -->
+            <div id="lockPanel" class="hidden">
+              <div class="flex flex-wrap items-center gap-2">
+                <input id="lockPwdInput" type="text" maxlength="20" placeholder="设置房间密码（其他成员加入时需输入）" class="input" style="max-width:280px" autocomplete="off">
+                <button class="btn btn-primary" id="lockSaveBtn" onclick="enableLock()"><i class="fa-solid fa-check"></i> <span id="lockSaveText">开启密码锁</span></button>
+                <button class="btn" onclick="disableLock()"><i class="fa-solid fa-lock-open"></i> 关闭密码锁</button>
+              </div>
+            </div>
+            <div class="text-[11px] text-gray-500 mt-2">开启后，新成员必须输入正确密码才能加入；已在房间内的成员不受影响。</div>
+            <div class="flex flex-wrap items-center gap-2 mt-4 pt-3" style="border-top:1px solid rgba(0,0,0,.08)">
+              <span class="text-xs text-gray-500">房间号显示：</span>
+              <button class="btn" id="hideIdBtn" onclick="toggleIdHidden()"><i class="fa-solid fa-eye-slash"></i> 隐藏房间号</button>
+              <span class="text-[11px] text-gray-500">隐藏后所有成员（含房主）都只能看到星号，仅影响页面显示，不影响邀请链接</span>
+            </div>
+          </div>
+          <!-- 房间配置（仅房主） -->
+          <div id="ownerConfig" class="glass p-4 mb-4">
+            <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-gear mr-2 text-indigo-400"></i>房间配置（仅房主）</div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <div class="text-xs text-gray-500 mb-1">年份（可多选）</div>
+                <div id="cfgYearTabs" class="flex flex-wrap gap-1.5"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">开播月份（可多选）</div>
+                <div id="cfgMonthTabs" class="flex flex-wrap gap-1.5"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">季度（可多选）</div>
+                <div id="cfgQuarterTabs" class="flex flex-wrap gap-1.5"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">来源（可多选）</div>
+                <div id="cfgSourceTabs" class="flex flex-wrap gap-1.5"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">类型（可多选）</div>
+                <div id="cfgTypeTabs" class="flex flex-wrap gap-1.5"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">分数上限（单选）</div>
+                <select id="cfgMaxScore" class="input" onchange="onDraftMaxScoreChange()">
+                  <option value="5">5 分制</option>
+                  <option value="10" selected>10 分制</option>
+                  <option value="100">100 分制</option>
+                </select>
+              </div>
+              <div class="lg:col-span-2">
+                <div class="text-xs text-gray-500 mb-1">评分模式（可多选，按勾选顺序依次进行）</div>
+                <div class="flex flex-wrap items-center gap-2" id="cfgModes">
+                  <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer"><input type="checkbox" class="mode-cb" value="expect" onchange="onDraftModeChange()"> <span class="text-sm"><i class="fa-solid fa-lightbulb mr-1 text-amber-400"></i>开播前预期分</span></label>
+                  <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer"><input type="checkbox" class="mode-cb" value="eps" onchange="onDraftModeChange()"> <span class="text-sm"><i class="fa-solid fa-list-ol mr-1 text-indigo-400"></i>各集评分</span></label>
+                  <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer"><input type="checkbox" class="mode-cb" value="final" onchange="onDraftModeChange()"> <span class="text-sm"><i class="fa-solid fa-trophy mr-1 text-emerald-400"></i>完结评分</span></label>
+                  <button class="btn !py-1.5 !px-3 ml-auto" onclick="applyConfig()"><i class="fa-solid fa-check"></i> 应用配置</button>
+                </div>
+              </div>
+              <div class="lg:col-span-2 text-[11px] text-gray-500" id="cfgDraftHint">尚未应用配置</div>
+            </div>
+          </div>
+          <!-- 番剧选择（仅房主） -->
+          <div id="ownerSelect" class="glass p-4 mb-4">
+            <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-square-check mr-2 text-indigo-400"></i>选择要打分的番剧（仅房主）</div>
+            <div class="text-[11px] text-gray-500 mb-2">先在上方勾选筛选条件（可多选）与评分模式，点击「应用配置」后这里才会显示候选番剧；勾选番剧后再次点击「应用配置」保存</div>
+            <div id="animeSelectList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1"></div>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button class="btn" onclick="selectAllAnime()"><i class="fa-solid fa-check-double"></i> 全选</button>
+              <button class="btn" onclick="deselectAllAnime()"><i class="fa-solid fa-square-minus"></i> 全不选</button>
+            </div>
+          </div>
+          <div class="text-xs text-gray-500 mb-2"><i class="fa-solid fa-circle-info mr-1"></i>房间信息</div>
+          <div class="flex flex-wrap gap-4 text-sm text-gray-300 mb-4">
+            <span><i class="fa-solid fa-calendar mr-1 text-indigo-400"></i><span id="cfgInfoQuarter">-</span></span>
+            <span><i class="fa-solid fa-book mr-1 text-indigo-400"></i><span id="cfgInfoSource">-</span></span>
+            <span><i class="fa-solid fa-layer-group mr-1 text-indigo-400"></i><span id="cfgInfoType">-</span></span>
+            <span><i class="fa-solid fa-gauge-high mr-1 text-indigo-400"></i><span id="cfgInfoScore">-</span> 分制</span>
+            <span><i class="fa-solid fa-film mr-1 text-indigo-400"></i><span id="cfgInfoAnimeCount">-</span> 部番剧</span>
+            <span><i class="fa-solid fa-clipboard-list mr-1 text-indigo-400"></i><span id="cfgInfoModes">-</span></span>
+          </div>
+          <!-- 成员列表 -->
+          <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-users mr-2 text-indigo-400"></i>成员 <span id="memberCount" class="text-gray-500">0</span></div>
+          <div id="memberList" class="space-y-2"></div>
+        </div>
+      </div>
+      <!-- 大厅聊天室 -->
+      <div class="lg:w-64 xl:w-72 flex-none">
+        <div class="glass p-4 flex flex-col h-[45vh] lg:h-[calc(100vh-150px)] lg:sticky lg:top-20">
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-semibold text-sm"><i class="fa-solid fa-comments mr-2 text-indigo-400"></i>房间聊天</div>
+            <span class="text-[11px] text-gray-500" id="chatCountLobby">0 条</span>
+          </div>
+          <div id="chatListLobby" class="flex-1 overflow-y-auto space-y-2.5 pr-1 mb-3 min-h-0"></div>
+          <div class="flex gap-2">
+            <input id="chatInputLobby" type="text" placeholder="说点什么…" maxlength="200" autocomplete="off" class="input flex-1">
+            <button class="btn btn-primary flex-none" onclick="sendChat()"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 评分进行中 -->
+  <div id="votingView" class="hidden">
+    <div class="flex flex-col lg:flex-row gap-6">
+      <!-- 评分进度名单 -->
+      <div class="lg:w-64 xl:w-72 flex-none">
+        <div class="glass p-4 lg:sticky lg:top-20">
+          <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-list-check mr-2 text-indigo-400"></i>评分进度</div>
+          <div id="progressList" class="space-y-1.5"></div>
+        </div>
+      </div>
+      <div class="flex-1 min-w-0" id="votingBody"></div>
+      <!-- 房间聊天室 -->
+      <div class="lg:w-64 xl:w-72 flex-none">
+        <div class="glass p-4 flex flex-col h-[45vh] lg:h-[calc(100vh-150px)] lg:sticky lg:top-20">
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-semibold text-sm"><i class="fa-solid fa-comments mr-2 text-indigo-400"></i>房间聊天</div>
+            <span class="text-[11px] text-gray-500" id="chatCount">0 条</span>
+          </div>
+          <div id="chatList" class="flex-1 overflow-y-auto space-y-2.5 pr-1 mb-3 min-h-0"></div>
+          <div class="flex gap-2">
+            <input id="chatInput" type="text" placeholder="说点什么…" maxlength="200" autocomplete="off" class="input flex-1">
+            <button class="btn btn-primary flex-none" onclick="sendChat()"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 结果页 -->
+  <div id="resultView" class="hidden">
+    <div id="resultBody"></div>
+  </div>
+
+  <div id="loading" class="text-center text-gray-500 py-10 hidden"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block"></i>加载中…</div>
+</main>
+
+<!-- 统计弹窗 -->
+<div id="statsModal" class="modal-overlay">
+  <div class="modal glass p-6 relative">
+    <button onclick="closeStats()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div id="statsBody"></div>
+  </div>
+</div>
+
+<!-- 番剧详情弹窗（点击封面/查看详情打开） -->
+<div id="animeModal" class="modal-overlay">
+  <div class="modal glass p-6 relative">
+    <button onclick="closeAnimeInfo()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div id="animeModalBody"></div>
+  </div>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script>
+/* ============================================================
+ * 数据层 dataProvider（与 index.html 同构，含房间云端读写）
+ * ============================================================ */
+const dataProvider = {
+  USE_CLOUD: true,
+  ENV_ID: "dpcca-wiki-d7g0dl19y23cd30f3",
+  _ls: {
+    get(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
+    set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} },
+    del(key) { try { localStorage.removeItem(key); } catch (e) {} },
+  },
+  _local: {
+    loadUserData() { return dataProvider._ls.get("dpcca_my_profile", {}); },
+    saveUserData(data) { dataProvider._ls.set("dpcca_my_profile", data); return true; },
+    initAnimeData() { return ANIME_LIBRARY; },
+    loadAnimeLibrary() { return ANIME_LIBRARY; },
+  },
+  /* 云端实现：腾讯云开发文档型数据库（Web SDK v2） */
+  _cloud: {
+    _app: null, _auth: null, _db: null,
+    async _getDB() {
+      if (this._db) return this._db;
+      if (typeof cloudbase === "undefined") throw new Error("未引入 @cloudbase/js-sdk");
+      this._app = cloudbase.init({ env: dataProvider.ENV_ID });
+      this._auth = this._app.auth({ persistence: "local" });
+      if (!this._auth.hasLoginState()) {
+        await this._auth.anonymousAuthProvider().signIn();
+      }
+      this._db = this._app.database();
+      return this._db;
+    },
+    async _uid() {
+      await this._getDB();
+      return (this._auth.currentUser && this._auth.currentUser.uid) || "local-user";
+    },
+    async loadUserData() {
+      const db = await this._getDB();
+      const uid = await this._uid();
+      try {
+        const res = await db.collection("user_profiles").doc(uid).get();
+        const item = Array.isArray(res.data) ? res.data[0] : res.data;
+        return (item && item.data) || {};
+      } catch (e) { return {}; }
+    },
+    async saveUserData(data) {
+      const db = await this._getDB();
+      const uid = await this._uid();
+      await db.collection("user_profiles").doc(uid).set({ data });
+      return true;
+    },
+    /* 分页拉取全量番剧（Web SDK 单次 get() 最多返回 100 条，limit 最大 1000） */
+    async _fetchAllAnime() {
+      const db = await this._getDB();
+      const PAGE = 1000;
+      let skip = 0;
+      let all = [];
+      while (true) {
+        const res = await db.collection("anime_library").orderBy("id", "asc").skip(skip).limit(PAGE).get();
+        const list = res.data || [];
+        all = all.concat(list);
+        if (list.length < PAGE) break;
+        skip += PAGE;
+      }
+      return all;
+    },
+    async initAnimeData() {
+      const list = await this._fetchAllAnime();
+      if (list.length) return list;
+      throw new Error("云端番剧库为空");
+    },
+    async loadAnimeLibrary() {
+      return await this._fetchAllAnime();
+    },
+    /* 云端房间读写（集合 room_sessions，文档 _id = 房间号） */
+    async saveRoom(roomObj) {
+      const db = await this._getDB();
+      // 剥离 _id/_openid：CloudBase set() 载荷含这两个系统字段时整次写入会被静默忽略
+      const { _id, _openid, ...clean } = roomObj;
+      await db.collection("room_sessions").doc(roomObj.id).set(clean);
+      return true;
+    },
+    async loadRoom(id) {
+      const db = await this._getDB();
+      const res = await db.collection("room_sessions").doc(id).get();
+      const item = Array.isArray(res.data) ? res.data[0] : res.data;
+      return item || null;
+    },
+    async removeRoom(id) {
+      const db = await this._getDB();
+      await db.collection("room_sessions").doc(id).remove();
+      return true;
+    },
+  },
+  async loadUserData() { return this.USE_CLOUD ? this._cloud.loadUserData() : this._local.loadUserData(); },
+  async saveUserData(data) { return this.USE_CLOUD ? this._cloud.saveUserData(data) : this._local.saveUserData(data); },
+  async initAnimeData() { return this.USE_CLOUD ? this._cloud.initAnimeData() : this._local.initAnimeData(); },
+  async loadAnimeLibrary() { return this.USE_CLOUD ? this._cloud.loadAnimeLibrary() : this._local.loadAnimeLibrary(); },
+};
+
+/* ============================================================
+ * 公共番剧库（与 index.html 完全一致）
+ * ============================================================ */
+const ANIME_LIBRARY = [
+  { id:"a001", title:"异国日记", source:"漫画改", quarter:1, year:2026, month:1, day:2, episodes:12, tags:["科幻","冒险"], emoji:"🚀", gradient:["#14245e","#3a2b5f"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a001.jpg", desc:"一艘被遗忘的殖民舰，一群在星海间漂流的人类。当导航系统响起最后一声警报，领航员少女决定违抗中央电脑，向着记忆里那颗蓝色星球全速前进——在耗尽氧气之前。", staff:{ original:"藤本千寻", director:"北岛翔太", writer:"雨宫绫", music:"沢井一郎", studio:"Stellar Works", cast:["早见纱织","小野贤章","悠木碧","神谷浩史"] } },
+  { id:"a002", title:"剑与纸鸢", source:"小说改", quarter:1, year:2026, month:1, day:8, episodes:24, tags:["国风","热血"], emoji:"⚔️", gradient:["#3a2b1f","#5f2b1f"], desc:"山河破碎的乱世，少年剑客陆离从废墟中捡回一只会飞的机关纸鸢。纸鸢的翅膀上刻着一句古老的预言，而预言指向的，正是他失去的故乡。", staff:{ original:"墨白", director:"林晚舟", writer:"沈青梧", music:"高梨康治", studio:"九州动画", cast:["杨天翔","苏尚卿","乔诗语","边江"] } },
+  { id:"a003", title:"雾都夜航", source:"小说改", quarter:1, year:2026, month:1, day:15, episodes:10, tags:["悬疑","都市"], emoji:"🌫️", gradient:["#1f2f4f","#2b1f3a"], desc:"永雾之城中的神秘客船，每晚准时出现在第九码头。船上载着的是逝者的记忆，而侦探少女的委托人，恰恰是一具会开口说话的尸体。", staff:{ original:"雾岛シン", director:"泽井良介", writer:"高桥留见", music:"川井宪次", studio:"Misty Lane", cast:["花泽香菜","中村悠一","早见纱织","钉宫理惠"] } },
+  { id:"a004", title:"天穹之下", source:"原创", quarter:1, year:2026, month:1, day:22, episodes:13, tags:["机甲","战争"], emoji:"🛡️", gradient:["#2b1f4f","#14245e"], desc:"天空之城覆灭后，幸存者驾驶着旧时代的机甲，在云海残骸间守护最后的故土。少年驾驶员米迦勒只想知道：那天坠落的天空，究竟是被谁击碎的。", staff:{ original:"高桥渡", director:"板野一郎", writer:"吉野弘幸", music:"鹭巢诗郎", studio:"Nebula Arms", cast:["梶裕贵","泽城美雪","铃木达央","茅野爱衣"] } },
+  { id:"a005", title:"极昼之光", source:"小说改", quarter:1, year:2026, month:1, day:29, episodes:12, tags:["奇幻","治愈"], emoji:"☀️", gradient:["#4f3a1f","#1f4f3a"], desc:"极北之地，一年中有半年是永昼。灯塔看守人的孙女在漫漫长昼里遇见了一个来自永夜之境的少年，她决定用整整一个夏天的光，为他点亮回家的路。", staff:{ original:"森见登美彦", director:"长井龙雪", writer:"冈田麿里", music:"菅野洋子", studio:"Daylight", cast:["水濑祈","内山昂辉","佐仓绫音","小野大辅"] } },
+  { id:"a101", title:"樱色回信", source:"原创", quarter:4, year:2026, month:4, day:3, episodes:12, tags:["恋爱","校园"], emoji:"🌸", gradient:["#5f2b3a","#3a2b5f"], desc:"高二那年春天，女主在旧书里翻出一封没有寄出的情书，收件人却是十年后的自己。为了完成这封回信，她决定认真活过这个樱花纷飞的春天。", staff:{ original:"新海汐", director:"片山一良", writer:"今井文也", music:"天门", studio:"Petit Sakura", cast:["早见纱织","梶裕贵","户松遥","石川界人"] } },
+  { id:"a102", title:"铁与茉莉", source:"漫画改", quarter:4, year:2026, month:4, day:10, episodes:26, tags:["热血","体育"], emoji:"🥊", gradient:["#2b3a1f","#3a2b1f"], desc:"茉莉与铁拳——被人嘲笑'花拳绣腿'的少女拳手，用一朵茉莉作为拳击台的标记。她只做一件事：把所有看不起她的人，一个个打趴下。", staff:{ original:"井上雄彦", director:"宫地昌幸", writer:"森田真由", music:"和田薰", studio:"Iron Petal", cast:["小松未可子","山下大辉","花江夏树","泽城美雪"] } },
+  { id:"a103", title:"夜行列车", source:"漫画改", quarter:4, year:2026, month:4, day:17, episodes:11, tags:["奇幻","公路"], emoji:"🚂", gradient:["#1f1f4f","#2b3a5f"], desc:"午夜零点，通往'过去'的夜行列车从不晚点。乘务员少女每天在月台上检票，直到那天，她遇见了那张写着妈妈名字的旧车票。", staff:{ original:"浅野一二O", director:"谷口悟朗", writer:"中岛かずき", music:"泽野弘之", studio:"Railway Dream", cast:["能登麻美子","福山润","坂本真绫","石田彰"] } },
+  { id:"a104", title:"云端咖啡屋", source:"漫画改", quarter:4, year:2026, month:4, day:24, episodes:12, tags:["日常","美食"], emoji:"☕", gradient:["#4f3a2b","#3a1f2b"], desc:"开在云层之上的咖啡屋，老板用一杯手冲咖啡交换顾客的一个烦恼。今天的第一位客人，是来自北方的、想忘记一切的少年。", staff:{ original:"荒川弘", director:"石原立也", writer:"吉田玲子", music:"大岛ミチル", studio:"Cloud Beans", cast:["茅野爱衣","樱井孝宏","花泽香菜","中井和哉"] } },
+  { id:"a105", title:"独角戏", source:"原创", quarter:4, year:2026, month:4, day:30, episodes:13, tags:["悬疑","心理"], emoji:"🎭", gradient:["#2b1f2b","#1f2b4f"], desc:"剧场新星步美发现，自己每次演出时，观众席最后一排总坐着同一个戴着面具的人。面具下的脸，竟然和她一模一样。", staff:{ original:"今敏遗风", director:"汤浅政明", writer:"脚本家三池", music:"椎名豪", studio:"Mirror Stage", cast:["悠木碧","大冢明夫","能登麻美子","关智一"] } },
+
+  { id:"a301", title:"金秋物语", source:"漫画改", quarter:10, year:2026, month:10, day:1, episodes:13, tags:["恋爱","治愈"], emoji:"🍂", gradient:["#4f2b1f","#3a4f1f"], desc:"红叶铺满小径的秋天，图书管理员与常来借书的漫画家，因为一本错放的推理小说开始交谈。他们约定，在最后一枚红叶落下之前读完整个四季的故事。", staff:{ original:"高屋奈月", director:"小林宽", writer:"木村畅", music:"桥本由香利", studio:"Autumn Tale", cast:["早见纱织","中村悠一","佐藤利奈","铃村健一"] } },
+  { id:"a302", title:"蒸汽侦探社", source:"小说改", quarter:10, year:2026, month:10, day:8, episodes:24, tags:["蒸汽朋克","推理"], emoji:"🕵️", gradient:["#2b1f1f","#4f3a1f"], desc:"维多利亚式雾都，机械改造过的侦探少女与退役的蒸汽机器人搭档。每个案件背后，都藏着一句被齿轮碾碎的证词。", staff:{ original:"青崎有吾", director:"神志那弘志", writer:"藤咲淳一", music:"和田薰", studio:"Piston Works", cast:["水树奈奈","诹访部顺一","泽城美雪","三木真一郎"] } },
+  { id:"a303", title:"月蚀之约", source:"漫画改", quarter:10, year:2026, month:10, day:15, episodes:12, tags:["奇幻","战斗"], emoji:"🌙", gradient:["#1f1f3a","#2b1f4f"], desc:"每逢月蚀，结界薄弱，妖物入侵人间。世代守护结界的'月之巫女'却只是个怕黑的高中生。她与半妖少年立下约定：一起撑过下一个满月。", staff:{ original:"绿川幸", director:"长沼范裕", writer:"冈田麿里", music:"吉森信", studio:"Eclipse", cast:["鬼头明里","内山昂辉","户松遥","日野聪"] } },
+  { id:"a304", title:"银龙工房", source:"漫画改", quarter:10, year:2026, month:10, day:22, episodes:26, tags:["热血","战斗"], emoji:"🐉", gradient:["#1f3a2b","#1f1f4f"], desc:"濒临倒闭的铁匠铺，最后一个学徒是能听懂龙语的红发少年。当沉睡百年的银龙在矿山苏醒，他的锤子第一次燃起了火焰。", staff:{ original:"真岛浩", director:"阿部记之", writer:"十川诚志", music:"高梨康治", studio:"Forge Dragon", cast:["松冈祯丞","花泽香菜","小野友树","伊濑茉莉也"] } },
+  { id:"a305", title:"倒数计时", source:"小说改", quarter:10, year:2026, month:10, day:29, episodes:12, tags:["悬疑","科幻"], emoji:"⏳", gradient:["#3a1f1f","#1f2b4f"], desc:"世界末日前的第 100 天，每个人的手腕上都出现了一个不可见的倒计时。唯独女主没有——她成了唯一能看到'末日'的人。", staff:{ original:"贵志佑介", director:"浅野恭司", writer:"濑古浩司", music:"川井宪次", studio:"Last Hour", cast:["雨宫天","石川界人","佐仓绫音","樱井孝宏"] } },
+  { id:"a401", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:1, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a401.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a402", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:2, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a402.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a403", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:3, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a403.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a404", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:4, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a404.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a405", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:5, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a405.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a406", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:6, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a406.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a407", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:7, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a407.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a408", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:8, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a408.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a409", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:9, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a409.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a410", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:10, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a410.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a411", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:11, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a411.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a412", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:12, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a412.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a413", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:13, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a413.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a414", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:14, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a414.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a415", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:15, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a415.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a416", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:16, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a416.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a417", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:17, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a417.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a418", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:18, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a418.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a419", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:19, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a419.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a420", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:20, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a420.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a421", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:21, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a421.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a422", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:22, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a422.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a423", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:23, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a423.png", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a424", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:24, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a424.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a425", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:25, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a425.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a426", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:26, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a426.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a427", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:27, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a427.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+];
+
+/* ============================================================
+ * 状态
+ * ============================================================ */
+const $ = (id) => document.getElementById(id);
+const QUARTERS = { 1: "1月新番", 4: "4月新番", 7: "7月新番", 10: "10月新番" };
+/* 评分模式 */
+const MODE_LABELS = { expect: "开播前预期", eps: "各集评分", final: "完结评分" };
+const MODE_ICONS = { expect: "fa-lightbulb", eps: "fa-list-ol", final: "fa-trophy" };
+const modeLabel = (m) => MODE_LABELS[m] || m;
+/* 月份文案：0 = 全部月份 */
+const monthLabel = (m) => (m ? m + "月新番" : "全部月份");
+/* 类型（v2.0 新增）：TV动画 / 剧场版 / OVA。
+ * 存量数据没有 type 字段，一律兜底视为 TV 动画；后续导入数据默认 tv。 */
+const TYPES = [
+  { v: "tv", label: "TV动画" },
+  { v: "movie", label: "剧场版" },
+  { v: "ova", label: "OVA" },
+];
+const typeOf = (a) => (a && a.type ? String(a.type) : "tv");
+const typeLabelOf = (a) => {
+  const k = typeOf(a);
+  const hit = TYPES.find(t => t.v === k);
+  return hit ? hit.label : k;
+};
+const monthOf = (a) => a.month || a.quarter || 1;
+const dayOf = (a) => a.day || 1;
+/* 季度（v3.0）：口径与后台 admin.html 完全一致（1=1月冬 / 2=4月春 / 3=7月夏 / 4=10月秋），
+   直接对应数据库 anime_library 的 quarter 字段；存量数据里有部分记录的 quarter 仍写成月份值（如 7 / 10），
+   统一按 1-3 / 4-6 / 7-9 / 10-12 折回季度序号后再比较，避免这部分番剧筛不出来 */
+const QUARTER_LABEL = { 1: "1月（冬）", 2: "4月（春）", 3: "7月（夏）", 4: "10月（秋）" };
+const normQuarter = (v) => {
+  const n = Number(v);
+  if (!n || n < 1) return 0;
+  return n <= 4 ? n : Math.min(4, Math.ceil(n / 3));
+};
+const quarterOf = (a) => normQuarter(a.quarter) || normQuarter(monthOf(a));
+
+/* ============================================================
+ * v3.0 评论框组件：加宽 + 自动换行 + 右下角点击放大/还原
+ * ============================================================ */
+function cmtBoxHTML(id, placeholder, value, wrapCls) {
+  return `<div class="cmt-wrap ${wrapCls || "mb-3"}">
+    <textarea id="${id}" rows="1" placeholder="${placeholder}" class="cmt-area input" oninput="autoGrow('${id}')">${escMsg(value)}</textarea>
+    <button type="button" class="cmt-grow" title="点击放大 / 还原评论框" onclick="cmtToggle('${id}')"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+  </div>`;
+}
+/* 随内容自动增高（上限：默认 170px / 放大后 420px） */
+function autoGrow(id) {
+  const el = $(id);
+  if (!el) return;
+  const wrap = el.closest ? el.closest(".cmt-wrap") : null;
+  const max = wrap && wrap.classList.contains("grown") ? 420 : 170;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight + 2, max) + "px";
+}
+/* 右下角按钮：在「放大」与「还原」之间切换 */
+function cmtToggle(id) {
+  const el = $(id);
+  if (!el) return;
+  const wrap = el.closest ? el.closest(".cmt-wrap") : null;
+  if (wrap) wrap.classList.toggle("grown");
+  autoGrow(id);
+  const btn = wrap && wrap.querySelector(".cmt-grow");
+  if (btn) {
+    btn.innerHTML = wrap.classList.contains("grown")
+      ? '<i class="fa-solid fa-down-left-and-up-right-to-center"></i>'
+      : '<i class="fa-solid fa-up-right-and-down-left-from-center"></i>';
+  }
+}
+const dateStr = (a) => `${monthOf(a)}月${String(dayOf(a)).padStart(2, "0")}日·${a.year || ""}`;
+/* 每集放送日期：默认首播日 + (集号-1)*7 天；a.epDates[集号] 有值时优先（后台停播/休播调整） */
+const epAirDate = (a, ep) => {
+  const ov = a && a.epDates && a.epDates[ep];
+  if (ov) return ov;
+  const base = new Date((a.year || 2026), (monthOf(a) || 1) - 1, (dayOf(a) || 1) + (ep - 1) * 7);
+  const y = base.getFullYear(), m = base.getMonth() + 1, d = base.getDate();
+  return (y !== (a.year || 2026) ? y + "年" : "") + `${m}月${d}日`;
+};
+
+let library = ANIME_LIBRARY;
+let myNick = "";
+let room = null;
+let roomId = "";
+let channel = null;
+let cloudWatcher = null;
+let isOwner = false;
+let voteDraftScore = 0;
+let voteDraftComment = "";
+let voteEpsPrev = null;   // { key: animeId|mode, score: {...} }：修改各集评分时回填缓存
+/* 房主配置草稿：筛选条件/评分模式/勾选番剧先写入草稿，点「应用配置」后才生效
+   v3.0：年份/月份/季度/来源/类型 均为多选（Set），空集合 = 不限该项 */
+let draftYears = null;
+let draftMonths = null;
+let draftQuarters = null;
+let draftSources = null;
+let draftTypes = null;
+let draftModes = null;
+let draftMaxScore = null;
+let draftSelectedIds = null;
+/* v3.0：房主点「开启密码锁」后才展开密码设置面板（关闭密码锁后重新收起，只剩「开启密码锁」按钮） */
+let lockPanelOpen = false;
+let draftDirty = false;
+let draftFiltersChanged = false;  // 筛选条件是否相对「已应用配置」发生过修改
+let draftIdsTouched = false;      // 番剧勾选是否被手动改动过（区分于「沿用已保存选择」）
+let lastDraftKey = "";   // 当前草稿对应的 番剧|模式，切换后自动清空评分草稿，避免残留旧分
+
+/* ============================================================
+ * Toast
+ * ============================================================ */
+function toast(msg, isErr = false) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " error" : " ok");
+  el.innerHTML = (isErr ? '<i class="fa-solid fa-circle-exclamation mr-2"></i>' : '<i class="fa-solid fa-circle-check mr-2"></i>') + msg;
+  $("toastContainer").appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 300); }, 2600);
+}
+
+/* ============================================================
+ * 昵称管理
+ * ============================================================ */
+function getMyNick() {
+  const saved = dataProvider._ls.get("dpcca_my_nick", "");
+  if (saved) return saved;
+  return "";
+}
+function ensureNick() {
+  const input = $("nickInput").value.trim() || myNick || getMyNick();
+  if (!input) { toast("请先输入昵称", true); return ""; }
+  myNick = input;
+  dataProvider._ls.set("dpcca_my_nick", myNick);
+  dataProvider.saveUserData({ nick: myNick }).catch(e => console.warn("昵称保存失败", e));
+  $("navNick") && ($("navNick").textContent = "👤 " + myNick);
+  return myNick;
+}
+
+/* ============================================================
+ * 房间数据存取与同步
+ * ============================================================ */
+function roomKey(id) { return "dpcca_room_" + id; }
+
+/* 兼容旧房间数据 + 补齐默认配置（年份/月份/来源/评分模式）
+   month: 0 = 全部月份，1-12 = 对应开播月份 */
+function migrateRoom(r) {
+  if (!r) return r;
+  r.config = r.config || {};
+  r.config.month = (r.config.month != null) ? r.config.month : ((r.config.quarter != null) ? r.config.quarter : 0);
+  r.config.year = r.config.year || 0;                  // 0 = 全部年份
+  r.config.source = r.config.source || "全部来源";
+  r.config.type = r.config.type || "全部类型";          // 类型筛选：全部类型 / TV动画 / 剧场版 / OVA（旧房间默认全部）
+  r.config.maxScore = r.config.maxScore || 10;
+  if (!Array.isArray(r.config.modes)) r.config.modes = ["expect", "eps", "final"];  // 仅旧房间无此字段时补全
+
+  /* v3.0：筛选条件改为多选数组（空数组 = 不限该项），旧房间的单值字段自动迁移 */
+  const toArr = (v) => Array.isArray(v) ? v : (v == null ? [] : [v]);
+  if (!Array.isArray(r.config.years)) r.config.years = toArr(r.config.years).map(Number).filter(n => !!n);
+  if (!Array.isArray(r.config.months)) r.config.months = toArr(r.config.months).map(Number).filter(n => !!n);
+  if (!Array.isArray(r.config.quarters)) r.config.quarters = toArr(r.config.quarters).map(Number).filter(n => n >= 1 && n <= 4);
+  if (!Array.isArray(r.config.sources)) r.config.sources = toArr(r.config.sources).filter(s => !!s && s !== "全部来源");
+  if (!Array.isArray(r.config.types)) r.config.types = toArr(r.config.types).filter(t => !!t && t !== "全部类型");
+  if (!r.config.years.length && r.config.year) r.config.years = [Number(r.config.year)];
+  if (!r.config.months.length && r.config.month) r.config.months = [Number(r.config.month)];
+  if (!r.config.sources.length && r.config.source && r.config.source !== "全部来源") r.config.sources = [r.config.source];
+  if (!r.config.types.length && r.config.type && r.config.type !== "全部类型") r.config.types = [r.config.type];
+  /* 旧字段保留为「摘要」（首个选中值），供历史展示逻辑兜底 */
+  r.config.year = r.config.years[0] || 0;
+  r.config.month = r.config.months[0] || 0;
+  r.config.source = r.config.sources[0] || "全部来源";
+  r.config.type = r.config.types[0] || "全部类型";
+
+  /* v3.0：密码锁与房间号隐藏 */
+  r.lock = (r.lock && typeof r.lock === "object") ? { on: !!r.lock.on, pwd: r.lock.pwd || "" } : { on: false, pwd: "" };
+  r.idHidden = !!r.idHidden;
+
+  r.currentMode = r.currentMode || (r.config.modes[0] || "expect");
+  r.scores = r.scores || {};
+  // 旧版单维度评分（key=成员昵称）迁移为「完结评分」结构
+  Object.keys(r.scores).forEach(id => {
+    const s = r.scores[id];
+    if (!s || typeof s !== "object") return;
+    const oldKeys = Object.keys(s).filter(k => k !== "expect" && k !== "eps" && k !== "final");
+    if (oldKeys.length && !s.final) {
+      s.final = {};
+      oldKeys.forEach(k => {
+        if (s[k] && typeof s[k] === "object" && s[k].score !== undefined) s.final[k] = s[k];
+      });
+      oldKeys.forEach(k => { if (k !== "expect" && k !== "eps" && k !== "final") delete s[k]; });
+    }
+  });
+  return r;
+}
+
+function loadRoom(id) { return dataProvider._ls.get(roomKey(id), null); }
+function saveRoom() {
+  dataProvider._ls.set(roomKey(room.id), room);
+  if (dataProvider.USE_CLOUD) {
+    dataProvider._cloud.saveRoom(room).catch(err => console.warn("云端保存房间失败", err));
+  }
+  broadcast();
+}
+async function loadRoomFromCloud(id) {
+  if (!dataProvider.USE_CLOUD) return loadRoom(id);
+  try {
+    const cloud = await dataProvider._cloud.loadRoom(id);
+    if (cloud) {
+      dataProvider._ls.set(roomKey(id), cloud);
+      return cloud;
+    }
+  } catch (e) { console.warn("云端拉取房间失败", e); }
+  return loadRoom(id);
+}
+function broadcast() {
+  if (channel) channel.postMessage({ type: "update", roomId: room.id, by: myNick });
+}
+
+/* 多人实时同步：云端 watch / 本地 BroadcastChannel 降级 */
+function syncRoom(id) {
+  roomId = id;
+  if (dataProvider.USE_CLOUD) {
+    dataProvider._cloud._getDB().then(db => {
+      cloudWatcher = db.collection("room_sessions").doc(id).watch({
+        onChange: (snap) => {
+          const doc = snap.docs && snap.docs[0];
+          if (!doc) return;
+          // CloudBase watch 回调中 docs[0] 为平铺的文档对象（含 _id/members/phase 等字段）
+          // 剥离 _id/_openid 系统字段，避免污染本地 room 导致后续 set 写入被忽略
+          const data = (doc.data && typeof doc.data === "object") ? doc.data : doc;
+          const { _id, _openid, ...clean } = data;
+          room = clean;
+          dataProvider._ls.set(roomKey(id), room);
+          render();
+          const a = getCurrentAnime();
+          if (room.phase === "voting" && a && modeAllSubmitted(room.currentMode, a.id)) {
+            const myScore = (room.scores[a.id] || {})[room.currentMode] && (room.scores[a.id] || {})[room.currentMode][myNick];
+            const flag = `dpcca_stats_${room.id}_${a.id}_${room.currentIndex}`;
+            if (myScore && !sessionStorage.getItem(flag)) {
+              sessionStorage.setItem(flag, "1");
+              setTimeout(() => openStats(a.id), 300);
+            }
+          }
+        },
+        onError: (err) => console.warn("云端监听失败", err),
+      });
+    }).catch(err => console.warn("云端监听初始化失败", err));
+    return;
+  }
+  try {
+    channel = new BroadcastChannel("dpcca_room_" + id);
+    channel.onmessage = (e) => {
+      if (e.data && e.data.type === "update" && e.data.by !== myNick) {
+        const fresh = loadRoom(id);
+        if (fresh) {
+          room = fresh;
+          render();
+          const a = getCurrentAnime();
+          if (room.phase === "voting" && a && modeAllSubmitted(room.currentMode, a.id)) {
+            const myScore = (room.scores[a.id] || {})[room.currentMode] && (room.scores[a.id] || {})[room.currentMode][myNick];
+            const flag = `dpcca_stats_${room.id}_${a.id}_${room.currentIndex}`;
+            if (myScore && !sessionStorage.getItem(flag)) {
+              sessionStorage.setItem(flag, "1");
+              setTimeout(() => openStats(a.id), 300);
+            }
+          }
+        }
+      }
+    };
+  } catch (e) {}
+}
+
+/* ============================================================
+ * 视图切换
+ * ============================================================ */
+function showView(name) {
+  $("entryView").classList.toggle("hidden", name !== "entry");
+  $("lobbyView").classList.toggle("hidden", name !== "lobby");
+  $("votingView").classList.toggle("hidden", name !== "voting");
+  $("resultView").classList.toggle("hidden", name !== "result");
+}
+
+function render() {
+  if (!room) return;
+  room = migrateRoom(room);
+  isOwner = room.members[myNick] && room.members[myNick].isOwner;
+  if (room.phase === "lobby") { showView("lobby"); renderLobby(); }
+  else if (room.phase === "voting") { showView("voting"); renderVoting(); }
+  else if (room.phase === "finished") { showView("result"); renderResult(); }
+  // v3.0：重渲染后按已有内容同步评论框高度
+  setTimeout(function () {
+    document.querySelectorAll(".cmt-area").forEach(el => { if (el.id) autoGrow(el.id); });
+  }, 0);
+}
+
+/* ============================================================
+ * 房间大厅
+ * ============================================================ */
+function renderLobby() {
+  const masked = !!room.idHidden;
+  $("roomIdText").textContent = masked ? "******" : room.id;
+  $("memberCount").textContent = Object.keys(room.members).length;
+  $("cfgInfoQuarter").textContent = configDateText(room.config);
+  $("cfgInfoSource").textContent = configSourceText(room.config);
+  $("cfgInfoType").textContent = configTypeText(room.config);
+  $("cfgInfoScore").textContent = room.config.maxScore;
+  $("cfgInfoAnimeCount").textContent = configApplied() ? quarterAnimes().length : 0;
+  $("cfgInfoModes").textContent = room.config.modes.length
+    ? room.config.modes.map(modeLabel).join(" / ")
+    : "未配置（请勾选后应用）";
+
+  // 密码锁 / 房间号隐藏状态
+  const locked = !!(room.lock && room.lock.on);
+  const lb = $("roomLockBadge");
+  if (lb) { lb.classList.toggle("hidden", !locked); lb.innerHTML = locked ? '<i class="fa-solid fa-lock mr-1"></i>已启用密码锁' : ""; }
+  const ls = $("lockState");
+  if (ls) ls.innerHTML = locked
+    ? '<i class="fa-solid fa-lock mr-1 text-emerald-500"></i>已开启'
+    : '<i class="fa-solid fa-lock-open mr-1"></i>未开启';
+  // 密码锁面板：未开启且未点过「开启密码锁」时，只显示那一个按钮
+  const showLockPanel = locked || lockPanelOpen;
+  const lockPanel = $("lockPanel");
+  if (lockPanel) lockPanel.classList.toggle("hidden", !showLockPanel);
+  const lockOnBtn = $("lockOnBtn");
+  if (lockOnBtn) lockOnBtn.classList.toggle("hidden", showLockPanel);
+  const lockSaveText = $("lockSaveText");
+  if (lockSaveText) lockSaveText.textContent = locked ? "修改密码" : "开启密码锁";
+  const hideBtn = $("hideIdBtn");
+  if (hideBtn) hideBtn.innerHTML = masked
+    ? '<i class="fa-solid fa-eye"></i> 显示房间号'
+    : '<i class="fa-solid fa-eye-slash"></i> 隐藏房间号';
+
+  // 仅房主可配置 / 选择番剧 / 开始
+  $("ownerConfig").style.display = isOwner ? "" : "none";
+  $("ownerSelect").style.display = isOwner ? "" : "none";
+  $("ownerSecurity").style.display = isOwner ? "" : "none";
+  $("startBtn").style.display = isOwner ? "" : "none";
+  const ready = allReady();
+  $("startBtn").disabled = !ready;
+  $("startBtn").innerHTML = ready
+    ? '<i class="fa-solid fa-play"></i> 开始评分'
+    : '<i class="fa-solid fa-hourglass-half"></i> 等待成员准备…';
+
+  if (!draftDirty) {
+    draftYears = new Set(room.config.years || []);
+    draftMonths = new Set(room.config.months || []);
+    draftQuarters = new Set(room.config.quarters || []);
+    draftSources = new Set(room.config.sources || []);
+    draftTypes = new Set(room.config.types || []);
+    draftModes = [...(room.config.modes || [])];
+    draftMaxScore = room.config.maxScore;
+    draftSelectedIds = [...(room.selectedIds || [])];
+    draftFiltersChanged = false;
+    draftIdsTouched = false;
+  }
+  $("cfgMaxScore").value = draftMaxScore;
+  document.querySelectorAll(".mode-cb").forEach(cb => cb.checked = draftModes.includes(cb.value));
+  renderCfgTabs();
+  renderAnimeSelect();
+  updateCfgDraftHint();
+
+  $("memberList").innerHTML = Object.entries(room.members).map(([nick, m]) => {
+    const readyState = m.ready || m.isOwner;
+    const safeNick = escMsg(nick);
+    return `
+    <div class="member-row">
+      <div class="avatar" style="background:#d4c4a8">${escMsg(nick[0] || "?")}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold truncate">${safeNick}${m.isOwner ? '<span class="text-xs text-amber-400 ml-1"><i class="fa-solid fa-crown"></i></span>' : ""}</span>
+          ${nick === myNick ? '<span class="text-[10px] text-indigo-300">(我)</span>' : ""}
+        </div>
+        <div class="text-[11px] mt-0.5 ${readyState ? "step-done" : "text-gray-500"}">${m.isOwner ? "房主 · 默认已准备" : readyState ? '<i class="fa-solid fa-circle-check mr-1"></i>已准备' : '<i class="fa-regular fa-circle mr-1"></i>未准备'}</div>
+      </div>
+      ${!m.isOwner && nick === myNick
+        ? `<button class="btn text-xs !py-1.5 !px-3" onclick="toggleReady()">${readyState ? "取消准备" : '<i class="fa-solid fa-hand"></i> 准备'}</button>`
+        : `<span class="dot ${m.online ? "on" : "off"}"></span>`}
+      ${isOwner && !m.isOwner ? `<div class="flex items-center gap-1.5">
+          <button class="btn btn-ghost text-xs !py-1.5 !px-2" title="把房主转交给 ${esc(nick)}" onclick="transferOwnership('${esc(nick)}')"><i class="fa-solid fa-crown text-amber-300"></i></button>
+          <button class="btn btn-ghost text-xs !py-1.5 !px-2" title="移除成员 ${esc(nick)}" onclick="kickMember('${esc(nick)}')"><i class="fa-solid fa-user-minus"></i></button>
+        </div>` : ""}
+    </div>`;
+  }).join("");
+  renderChat();
+}
+
+/* 所有非房主成员是否都已准备 */
+function allReady() {
+  if (!room) return false;
+  return Object.values(room.members).every(m => m.isOwner || m.ready);
+}
+
+/* 切换自己的准备状态 */
+function toggleReady() {
+  if (!room || !room.members[myNick]) return;
+  room.members[myNick].ready = !room.members[myNick].ready;
+  saveRoom();
+  renderLobby();
+  toast(room.members[myNick].ready ? "已准备，等待其他成员…" : "已取消准备");
+}
+
+function esc(s) { return (s || "").replace(/'/g, "\\'").replace(/"/g, "&quot;"); }
+
+/* 房间筛选条件（v3.0 多选）：年份 / 月份 / 季度 / 来源 / 类型，空数组 = 该项不限 */
+function configMatch(a, c) {
+  if (c.years && c.years.length && !c.years.includes(Number(a.year))) return false;
+  if ((c.months && c.months.length) || (c.quarters && c.quarters.length)) {
+    // 月份与季度同属「开播时间」维度：两者都选中时取并集（任一命中即通过）
+    const mHit = (c.months || []).includes(monthOf(a));
+    const qHit = (c.quarters || []).includes(quarterOf(a));
+    if (!mHit && !qHit) return false;
+  }
+  if (c.sources && c.sources.length && !c.sources.includes(a.source || "待定")) return false;
+  if (c.types && c.types.length && !c.types.includes(typeLabelOf(a))) return false;
+  return true;
+}
+function roomMatch(a) { return configMatch(a, room.config); }
+
+/* 配置是否已生效：未勾选评分模式并应用之前，不展示任何番剧 */
+function configApplied() { return !!(room && room.config && room.config.modes && room.config.modes.length); }
+
+/* 房间筛选条件摘要文案 */
+function configDateText(c) {
+  const parts = [];
+  if (c.years && c.years.length) parts.push(c.years.map(y => y + "年").join("/"));
+  if (c.months && c.months.length) parts.push(c.months.map(m => m + "月新番").join("/"));
+  if (c.quarters && c.quarters.length) parts.push(c.quarters.map(q => QUARTER_LABEL[q]).join("/"));
+  return parts.length ? parts.join(" · ") : "全部时间";
+}
+function configSourceText(c) { return (c.sources && c.sources.length) ? c.sources.join(" / ") : "全部来源"; }
+function configTypeText(c) { return (c.types && c.types.length) ? c.types.join(" / ") : "全部类型"; }
+
+/* 房间号显示文案：v3.0 隐藏状态下所有成员（含房主）都只看到星号 */
+function maskId() { return (room && room.idHidden) ? "******" : ((room && room.id) || "------"); }
+
+/* 密码锁：仅存储不可逆摘要，避免明文密码落到房间数据里 */
+function hashPwd(s) {
+  const str = "dpcca-lock:" + String(s);
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (((h << 5) + h) ^ str.charCodeAt(i)) >>> 0;
+  return h.toString(16);
+}
+
+function quarterAnimes() {
+  const base = library.filter(roomMatch);
+  if (room.selectedIds && room.selectedIds.length) return base.filter(a => room.selectedIds.includes(a.id));
+  return base;
+}
+
+function allQuarterAnimes() {
+  return library.filter(roomMatch);
+}
+
+/* ---------- 房主配置：多选筛选按钮 ---------- */
+function renderCfgTabs() {
+  if (!room || !draftYears) return;
+  const tab = (label, on, key) => `<button type="button" onclick="cfgToggle('${key}')" class="btn ${on ? "btn-primary" : ""}" style="padding:4px 9px;font-size:11px;line-height:1.4">${label}</button>`;
+  const set = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
+
+  const years = [...new Set(library.map(a => Number(a.year)).filter(n => !!n))].sort((a, b) => b - a);
+  set("cfgYearTabs", tab("全部年份", draftYears.size === 0, "years:")
+    + years.map(y => tab(y + "年", draftYears.has(y), "years:" + y)).join(""));
+
+  const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  set("cfgMonthTabs", tab("全部月份", draftMonths.size === 0, "months:")
+    + months.map(m => tab(m + "月", draftMonths.has(m), "months:" + m)).join(""));
+
+  set("cfgQuarterTabs", tab("全部季度", draftQuarters.size === 0, "quarters:")
+    + [1, 2, 3, 4].map(q => tab(QUARTER_LABEL[q], draftQuarters.has(q), "quarters:" + q)).join(""));
+
+  const sources = [...new Set(library.map(a => a.source || "待定"))].filter(Boolean);
+  set("cfgSourceTabs", tab("全部来源", draftSources.size === 0, "sources:")
+    + sources.map(s => tab(s, draftSources.has(s), "sources:" + s)).join(""));
+
+  set("cfgTypeTabs", tab("全部类型", draftTypes.size === 0, "types:")
+    + TYPES.map(t => tab(t.label, draftTypes.has(t.label), "types:" + t.label)).join(""));
+}
+
+/* 多选切换：key 形如 "years:2026" / "months:"（冒号后为空 = 清空该维度 = 全部） */
+function cfgToggle(key) {
+  if (!draftYears) return;
+  const i = key.indexOf(":");
+  const dim = key.slice(0, i), raw = key.slice(i + 1);
+  const map = { years: draftYears, months: draftMonths, quarters: draftQuarters, sources: draftSources, types: draftTypes };
+  const target = map[dim];
+  if (!target) return;
+  if (raw === "") { target.clear(); }
+  else {
+    const isNum = dim === "years" || dim === "months" || dim === "quarters";
+    const val = isNum ? Number(raw) : raw;
+    if (target.has(val)) target.delete(val); else target.add(val);
+  }
+  onDraftConfigChange();
+}
+
+function updateCfgDraftHint() {
+  const hint = $("cfgDraftHint");
+  if (!hint) return;
+  hint.textContent = draftDirty
+    ? "有未应用的修改，点击「应用配置」后才会生效"
+    : (configApplied() ? "配置已生效" : "尚未应用配置，下方不会显示番剧");
+}
+
+async function applyConfig() {
+  if (!draftYears) return;
+  const ms = draftMaxScore != null ? draftMaxScore : +$("cfgMaxScore").value;
+  const modes = [...document.querySelectorAll(".mode-cb:checked")].map(cb => cb.value);
+  if (!modes.length) { toast("请至少选择一种评分模式", true); return; }
+
+  const next = {
+    years: [...draftYears].sort((a, b) => a - b),
+    months: [...draftMonths].sort((a, b) => a - b),
+    quarters: [...draftQuarters].sort((a, b) => a - b),
+    sources: [...draftSources],
+    types: [...draftTypes],
+    maxScore: ms,
+    modes,
+    // 旧字段作为摘要保留，便于历史逻辑兜底
+    year: [...draftYears].sort((a, b) => a - b)[0] || 0,
+    month: [...draftMonths].sort((a, b) => a - b)[0] || 0,
+    source: [...draftSources][0] || "全部来源",
+    type: [...draftTypes][0] || "全部类型",
+  };
+
+  // 用新条件试算候选番剧，通过后再落地，避免校验失败时污染房间配置
+  const matched = library.filter(a => configMatch(a, next)).map(a => a.id);
+  let ids;
+  if (draftFiltersChanged || !room.selectedIds || !room.selectedIds.length) {
+    ids = matched;                                       // 筛选条件变化 / 首次应用：默认全选命中的番剧
+  } else {
+    const picked = draftIdsTouched ? draftSelectedIds : room.selectedIds;
+    ids = (picked || []).filter(id => matched.includes(id));
+    if (!ids.length) ids = matched;
+  }
+  if (!ids.length) { toast("没有符合筛选条件的番剧，请调整条件后重试", true); return; }
+
+  Object.assign(room.config, next);
+  room.selectedIds = ids;
+  room.currentMode = modes[0];
+  draftSelectedIds = [...ids];
+  draftFiltersChanged = false;
+  draftIdsTouched = false;
+  draftDirty = false;
+  saveRoom();
+  renderLobby();
+  toast("房间配置已应用，共 " + ids.length + " 部番剧");
+}
+
+/* ---------- 房主选择要打分的番剧（v3.0：应用配置后才显示） ---------- */
+function renderAnimeSelect() {
+  if (!room || !$("animeSelectList")) return;
+  const box = $("animeSelectList");
+  if (!configApplied()) {
+    box.innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10 lg:col-span-2 sm:col-span-2">尚未应用配置：请先勾选筛选条件与评分模式，点击「应用配置」后这里才会显示候选番剧。</div>`;
+    return;
+  }
+  const base = library.filter(roomMatch);
+  if (!base.length) {
+    box.innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10 sm:col-span-2">没有符合当前配置的番剧，请调整筛选条件后重新「应用配置」。</div>`;
+    return;
+  }
+  const sel = new Set(draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []));
+  box.innerHTML = base.map(a => `
+    <label class="flex items-center gap-2 p-2 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer">
+      <input type="checkbox" class="anime-select-cb" value="${a.id}" ${sel.has(a.id) ? "checked" : ""} onchange="onAnimeCbChange()">
+      <span class="flex items-center gap-2 min-w-0"><span class="flex-none">${coverThumbHTML(a, 30)}</span><span class="text-sm truncate">${a.title}</span><span class="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 flex-none text-gray-400">${a.year || ""}${a.month || ""}月 · ${a.source || "待定"} · ${typeLabelOf(a)}</span></span>
+    </label>`).join("");
+}
+
+function selectAllAnime() {
+  document.querySelectorAll(".anime-select-cb").forEach(cb => cb.checked = true);
+  onAnimeCbChange();
+}
+function deselectAllAnime() {
+  document.querySelectorAll(".anime-select-cb").forEach(cb => cb.checked = false);
+  onAnimeCbChange();
+}
+
+/* 修改筛选条件（草稿）：只标记待应用，不再提前显示番剧 */
+function onDraftConfigChange() {
+  draftFiltersChanged = true;
+  draftDirty = true;
+  renderCfgTabs();
+  updateCfgDraftHint();
+}
+
+/* 分数上限：单选，同样先写入草稿 */
+function onDraftMaxScoreChange() {
+  draftMaxScore = +$("cfgMaxScore").value;
+  draftDirty = true;
+  updateCfgDraftHint();
+}
+
+/* 勾选 / 取消评分模式：直接更新草稿（避免应用配置时回退到全选） */
+function onDraftModeChange() {
+  draftModes = [...document.querySelectorAll(".mode-cb:checked")].map(cb => cb.value);
+  draftDirty = true;
+  updateCfgDraftHint();
+}
+
+/* 勾选 / 取消番剧：直接更新草稿，随「应用配置」一起提交 */
+function onAnimeCbChange() {
+  draftSelectedIds = [...document.querySelectorAll(".anime-select-cb:checked")].map(cb => cb.value);
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+}
+
+/* ---------- 房间设置（仅房主）：密码锁 / 房间号隐藏 ---------- */
+/* 点「开启密码锁」→ 展开密码设置面板（框 + 保存/修改按钮 + 关闭密码锁） */
+function openLockPanel() {
+  if (!room || !isOwner) { toast("仅房主可以设置密码锁", true); return; }
+  lockPanelOpen = true;
+  renderLobby();
+  const inp = $("lockPwdInput");
+  if (inp) inp.focus();
+}
+
+function enableLock() {
+  if (!room || !isOwner) { toast("仅房主可以设置密码锁", true); return; }
+  const raw = ($("lockPwdInput") ? $("lockPwdInput").value : "").trim();
+  if (!raw) { toast("请先输入房间密码", true); return; }
+  const wasOn = !!(room.lock && room.lock.on);
+  room.lock = { on: true, pwd: hashPwd(raw) };
+  lockPanelOpen = true;
+  $("lockPwdInput").value = "";
+  pushSysMsg(wasOn ? "房主已修改密码锁密码" : "房主已启用密码锁");
+  saveRoom();
+  renderLobby();
+  toast(wasOn ? "密码锁密码已更新" : "密码锁已开启，新成员需输入密码才能加入");
+}
+
+/* 关闭密码锁：面板收起，只剩「开启密码锁」按钮 */
+function disableLock() {
+  if (!room || !isOwner) { toast("仅房主可以关闭密码锁", true); return; }
+  if (!room.lock || !room.lock.on) { toast("密码锁当前未开启"); return; }
+  if (!confirm("确认关闭密码锁？关闭后任何人都可以直接加入房间。")) return;
+  room.lock = { on: false, pwd: "" };
+  lockPanelOpen = false;
+  const pi = $("lockPwdInput"); if (pi) pi.value = "";
+  pushSysMsg("房主已关闭密码锁");
+  saveRoom();
+  renderLobby();
+  toast("密码锁已关闭");
+}
+
+function toggleIdHidden() {
+  if (!room || !isOwner) { toast("仅房主可以隐藏房间号", true); return; }
+  room.idHidden = !room.idHidden;
+  pushSysMsg(room.idHidden ? "房主已隐藏房间号" : "房主已显示房间号");
+  saveRoom();
+  renderLobby();
+  toast(room.idHidden ? "房间号已隐藏（所有成员仅显示星号）" : "房间号已显示");
+}
+
+function copyInvite() {
+  const url = location.origin + location.pathname + "?room=" + room.id;
+  const tip = room.idHidden ? "邀请链接已复制（房间号当前对外隐藏显示）" : "邀请链接已复制";
+  navigator.clipboard.writeText(url).then(() => toast(tip)).catch(() => {
+    prompt("复制邀请链接：", url);
+  });
+}
+
+async function kickMember(nick) {
+  if (!confirm("确认移除成员 " + nick + " ？")) return;
+  delete room.members[nick];
+  pushSysMsg(nick + " 已被移除");
+  saveRoom();
+  renderLobby();
+  toast("已移除 " + nick);
+}
+
+/* 房主主动把房主身份转交给指定成员（自己留在房间继续作为普通成员） */
+function transferOwnership(nick) {
+  if (!room || !isOwner) { toast("仅房主可以转交房主身份", true); return; }
+  if (nick === myNick || !room.members[nick]) return;
+  if (!confirm("确认把房主身份转交给 " + nick + " ？\n转交后你将变为普通成员，需要时可再点「准备」参与评分。")) return;
+  room.members[myNick].isOwner = false;
+  room.members[myNick].ready = true; // 本人保持就绪，不阻塞新房主开新一轮评分
+  room.members[nick].isOwner = true;
+  if (room.members[nick].ready === undefined) room.members[nick].ready = true;
+  pushSysMsg("房主已转交给 " + nick);
+  saveRoom();
+  render();
+  toast("已把房主转交给 " + nick);
+}
+
+/* 房间内系统提示（写进 room.chat，随 saveRoom/watch 实时广播给所有成员） */
+function pushSysMsg(msg) {
+  if (!room) return;
+  room.chat = room.chat || [];
+  room.chat.push({ sys: true, nick: "系统", msg: String(msg).slice(0, 120), ts: Date.now() });
+  if (room.chat.length > 200) room.chat = room.chat.slice(-200);
+}
+
+/* 处理「本人离开房间」对共享房间数据的影响：
+    - 房主退出且房内还有成员 → 房主身份顺位继承给仍在房内最早加入的成员
+    - 普通成员退出 → 从成员名单移除
+    - 相应提示写入房间聊天，由 saveRoom 实时同步给其他成员 */
+function doLeave() {
+  if (!room || !room.members[myNick]) return false;
+  const leaving = myNick;
+  const leavingOwner = !!room.members[leaving].isOwner;
+  const others = Object.keys(room.members).filter(n => n !== leaving);
+  if (leavingOwner && others.length) {
+    const next = others[0];
+    room.members[next].isOwner = true;
+    if (room.members[next].ready === undefined) room.members[next].ready = true;
+    pushSysMsg("原房主 " + leaving + " 已退出，新房主为 " + next);
+  } else if (others.length) {
+    pushSysMsg(leaving + " 已退出");
+  }
+  delete room.members[leaving];
+  return true;
+}
+
+function exitRoom() {
+  if (!room || !room.members[myNick]) { backToEntry(); return; }
+  const leavingOwner = !!room.members[myNick].isOwner;
+  const hasOthers = Object.keys(room.members).length > 1;
+  if (leavingOwner && hasOthers && !confirm("你是房主，退出后房主身份将自动转交给其他成员，确认退出？")) return;
+  doLeave();
+  const id = room.id;
+  if (!Object.keys(room.members).length) {
+    // 最后一人退出：删除云端房间，避免留下空房占位
+    stopWatch();
+    dataProvider._ls.del(roomKey(id));
+    if (dataProvider.USE_CLOUD) dataProvider._cloud.removeRoom(id).catch(e => console.warn("删除空房间失败", e));
+  } else {
+    // 房间还有成员：全量保存，其余成员的 watch 会实时刷新名单并收到系统提示
+    saveRoom();
+    dataProvider._ls.del(roomKey(id));
+  }
+  backToEntry();
+  toast("已退出房间");
+}
+
+function stopWatch() {
+  if (cloudWatcher && cloudWatcher.close) { try { cloudWatcher.close(); } catch (e) {} }
+  cloudWatcher = null;
+  if (channel) { try { channel.close(); } catch (e) {} }
+  channel = null;
+}
+
+function backToEntry() {
+  stopWatch();
+  room = null; roomId = "";
+  showView("entry");
+  clearRoomSession();
+}
+
+/* 房主见房主身份唯一性校验：云端异常时保证只有一个房主 */
+function sanitizeRoomOwners() {
+  if (!room) return false;
+  const owners = Object.entries(room.members).filter(([n, m]) => m.isOwner).map(([n]) => n);
+  if (owners.length <= 1) return false;
+  owners.sort((a, b) => (room.members[a].joinedAt || 0) - (room.members[b].joinedAt || 0));
+  for (let i = 1; i < owners.length; i++) room.members[owners[i]].isOwner = false;
+  return true;
+}
+
+const ROOM_SESSION_KEY = "dpcca_rating_session";
+const ROOM_ACTIVE_TAB_KEY = "dpcca_rating_active_tab";
+
+function saveRoomSession() {
+  if (!room || !room.members[myNick]) return;
+  localStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({
+    id: room.id,
+    nick: myNick,
+    isOwner: !!room.members[myNick].isOwner,
+    ts: Date.now()
+  }));
+  try { sessionStorage.setItem(ROOM_ACTIVE_TAB_KEY, room.id); } catch (e) {}
+}
+
+function clearRoomSession() {
+  localStorage.removeItem(ROOM_SESSION_KEY);
+  try { sessionStorage.removeItem(ROOM_ACTIVE_TAB_KEY); } catch (e) {}
+}
+
+/* 刷新恢复 / 清理过期会话：
+   - 当前标签页刷新：sessionStorage 仍保留 active 标记，直接回到房间，不触发退出。
+   - 关闭标签后再打开 / 从其他标签打开：sessionStorage 丢失，本地 session 视为过期，执行一次退出清理。 */
+async function restoreOrCleanupRoomSession() {
+  const activeId = (() => { try { return sessionStorage.getItem(ROOM_ACTIVE_TAB_KEY); } catch (e) { return null; } })();
+  const raw = (() => { try { return localStorage.getItem(ROOM_SESSION_KEY); } catch (e) { return null; } })();
+  if (!raw) return false;
+  let sess;
+  try { sess = JSON.parse(raw); } catch (e) { clearRoomSession(); return false; }
+  if (!sess || !sess.id || !sess.nick) { clearRoomSession(); return false; }
+
+  const saved = await loadRoomFromCloud(sess.id);
+  if (!saved) { clearRoomSession(); return false; }
+
+  if (activeId === sess.id) {
+    // 同一标签页刷新：恢复在线状态，不转让/不退出
+    myNick = sess.nick;
+    room = migrateRoom(saved);
+    if (!room.members[myNick]) {
+      // 刷新期间被踢或房间重建：作为普通成员重新加入
+      room.members[myNick] = { isOwner: false, online: true, ready: false, joinedAt: Date.now() };
+      pushSysMsg(myNick + " 重新加入房间");
+    } else {
+      room.members[myNick].online = true;
+      if (room.members[myNick].ready === undefined) room.members[myNick].ready = false;
+    }
+    const fixed = sanitizeRoomOwners();
+    saveRoom();
+    syncRoom(room.id);
+    render();
+    if (fixed) toast("房间数据已自动修正");
+    return true;
+  }
+
+  // 跨标签/关闭后重开：按过期会话清理云端成员（仅当 session 超过 30 秒，避免误删正在活跃的标签）
+  const age = Date.now() - (sess.ts || 0);
+  if (age > 30000) {
+    room = migrateRoom(saved);
+    const tempNick = sess.nick;
+    const hadMe = !!room.members[tempNick];
+    const others = Object.keys(room.members).filter(n => n !== tempNick);
+    if (hadMe) {
+      if (room.members[tempNick].isOwner && others.length) {
+        const next = others[0];
+        room.members[next].isOwner = true;
+        if (room.members[next].ready === undefined) room.members[next].ready = true;
+        pushSysMsg("原房主 " + tempNick + " 已退出，新房主为 " + next);
+      } else if (others.length) {
+        pushSysMsg(tempNick + " 已退出");
+      }
+      delete room.members[tempNick];
+    }
+    if (!Object.keys(room.members).length) {
+      dataProvider._ls.del(roomKey(sess.id));
+      if (dataProvider.USE_CLOUD) dataProvider._cloud.removeRoom(sess.id).catch(() => {});
+    } else {
+      saveRoom();
+    }
+  }
+  clearRoomSession();
+  return false;
+}
+
+/* 直接关闭/刷新页签：刷新时由 sessionStorage 保留 active 标记，不执行退出；
+   关闭标签后 sessionStorage 被丢弃，下次打开页面会清理残留成员。 */
+window.addEventListener("beforeunload", () => {
+  if (!room || !room.members[myNick]) return;
+  saveRoomSession();
+});
+
+/* ============================================================
+ * 开始评分 / 轮流评分
+ * ============================================================ */
+async function startVoting() {
+  if (!allReady()) { toast("所有成员都准备后才能开始", true); return; }
+  if (!room.config.modes || !room.config.modes.length) {
+    toast("请先在房间配置中勾选评分模式，并点击「应用配置」", true);
+    return;
+  }
+  const list = quarterAnimes();
+  if (!list.length) { toast("请先选择要打分的番剧", true); return; }
+  // 已有历史评分（重新开一局/回大厅后再开始）：由房主确认后清空，避免旧分数残留
+  if (room.scores && Object.keys(room.scores).length && !confirm("房间已有历史评分数据，重新开始将清空之前的评分，确认继续？")) return;
+  room.phase = "voting";
+  room.currentIndex = 0;
+  room.currentMode = room.config.modes[0];
+  room.scores = {};
+  saveRoom();
+  render();
+  toast("评分开始！按「" + room.config.modes.map(modeLabel).join(" → ") + "」依次打分");
+}
+
+function getCurrentAnime() {
+  if (!room || room.phase !== "voting") return null;
+  const list = quarterAnimes();
+  return list[room.currentIndex] || null;
+}
+
+function renderVoting() {
+  const a = getCurrentAnime();
+  if (!a) return;
+  const list = quarterAnimes();
+  const members = Object.keys(room.members);
+  const maxScore = room.config.maxScore;
+  const modes = room.config.modes;
+  const mode = room.currentMode || modes[0] || "final";
+  const modeIdx = modes.indexOf(mode);
+  const modeTotal = modes.length;
+  const scores = room.scores[a.id] || {};
+  const modeS = scores[mode] || {};
+  const mySubmitted = !!modeS[myNick];
+  const submittedCount = members.filter(m => modeS[m]).length;
+  const showOthers = mySubmitted;
+  // 切换到另一部番/另一评分模式时，清空上次的评分草稿，避免旧分/旧评论残留
+  const draftKey = a.id + "|" + mode;
+  if (lastDraftKey !== draftKey) {
+    lastDraftKey = draftKey;
+    voteDraftScore = 0;
+    voteDraftComment = "";
+    voteEpsPrev = null;
+  }
+
+  // 番剧进度条（整部番所有模式都完成才视为完成）
+  let progress = "";
+  list.forEach((x, i) => {
+    const done = animeAllModesSubmitted(x.id);
+    const cur = i === room.currentIndex;
+    progress += `<div class="flex-1 h-1.5 rounded-full ${done ? "bg-emerald-400" : cur ? "bg-indigo-400" : "bg-white/10"}"></div>`;
+  });
+
+  // 当前番剧的评分模式指示
+  const modeChips = modes.map((m) => {
+    const done = modeAllSubmitted(m, a.id);
+    return `<span class="px-2.5 py-1 rounded-full text-xs border ${m === mode ? "border-amber-400 bg-white/10 font-semibold" : done ? "border-white/10 bg-white/5 text-emerald-400" : "border-transparent text-gray-500"}"><i class="fa-solid ${MODE_ICONS[m]} mr-1"></i>${modeLabel(m)}${done ? ' <i class="fa-solid fa-circle-check"></i>' : ""}</span>`;
+  }).join("");
+
+  $("votingBody").innerHTML = `
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <button class="btn btn-ghost" onclick="backToLobby()"><i class="fa-solid fa-arrow-left"></i> 返回大厅</button>
+      <button class="btn btn-ghost" onclick="exitRoom()"><i class="fa-solid fa-arrow-right-from-bracket"></i> 退出房间</button>
+      <div class="text-sm text-gray-400">${room.currentIndex + 1} / ${list.length} · 阶段 ${modeIdx + 1}/${modeTotal}</div>
+    </div>
+    <div class="flex gap-1 mb-3">${progress}</div>
+    <div class="flex flex-wrap gap-2 mb-4">${modeChips}</div>
+
+    <div class="space-y-5">
+      <!-- 番剧信息 -->
+      <div class="glass p-5">
+        <div class="flex flex-col sm:flex-row gap-5">
+          <button class="w-24 sm:w-28 flex-none self-start group" onclick="openAnimeInfo('${a.id}')" title="点击查看番剧详情">
+            <div class="rounded-xl aspect-[4/5] overflow-hidden ring-1 ring-white/10 group-hover:ring-amber-400/60 transition">${coverHTML(a, "40px")}</div>
+          </button>
+          <div class="flex-1 min-w-0">
+            <h2 class="font-bold text-xl mb-3 leading-snug">${a.title}</h2>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 mb-4">
+              <span>${a.source || "待定"}</span>
+              <span class="text-white/20">|</span>
+              <span>${typeLabelOf(a)}</span>
+              <span class="text-white/20">|</span>
+              <span>${dateStr(a)}</span>
+              ${a.staff.director ? `<span class="text-white/20">|</span><span>导演：${a.staff.director}</span>` : ""}
+              ${a.staff.studio ? `<span class="text-white/20">|</span><span>制作：${a.staff.studio}</span>` : ""}
+            </div>
+            <button class="text-amber-600 hover:text-amber-700 underline underline-offset-2 text-xs" onclick="openAnimeInfo('${a.id}')">查看详情</button>
+          </div>
+        </div>
+        <!-- 各模式平均分概览 -->
+        <div class="mt-4 grid grid-cols-3 gap-2 text-center">
+          ${modes.map(m => {
+            const s = scores[m] || {};
+            const nums = members.filter(mem => s[mem]).map(mem => s[mem].score);
+            const avg = modeAvg(nums);
+            return `<div class="rounded-lg bg-white/5 border border-white/10 py-1.5">
+              <div class="text-[10px] text-gray-500">${modeLabel(m)}</div>
+              <div class="text-sm font-bold" style="color:${avg != null ? "#c09a5b" : "#a8988a"}">${avg != null ? avg : "—"}</div>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+
+      <!-- 评分区 -->
+      <div class="flex flex-col gap-4">
+        <div class="glass p-4">
+          <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+            <div class="font-semibold"><i class="fa-solid ${MODE_ICONS[mode]} mr-2 text-amber-400"></i>${modeLabel(mode)}</div>
+            <span class="text-[11px] text-gray-500">${maxScore} 分制 · 提交后不可修改</span>
+          </div>
+          <div class="text-[11px] text-gray-500 mb-3">${modeDesc(mode, a)}</div>
+          ${mySubmitted ? `
+            <div class="text-center py-3">
+              <div class="text-3xl font-extrabold mb-1" style="color:#c09a5b">${submittedScoreHTML(mode, modeS[myNick])}</div>
+              <div class="text-emerald-400 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>已提交</div>
+              <p class="text-sm text-gray-300">${escMsg(modeS[myNick].comment) || ""}</p>
+            </div>
+            <button class="btn w-full" onclick="changeMyVote()"><i class="fa-solid fa-pen"></i> 修改评分</button>
+          ` : mode === "eps" ? `
+            <div id="epsGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-3">${epsInputHTML(a, maxScore, (voteEpsPrev && voteEpsPrev.key === a.id + "|" + mode) ? voteEpsPrev.score : null)}</div>
+            <div class="text-[11px] text-gray-500 mb-2">已填 <span id="epsFilled">0</span>/${a.episodes} 集 · 平均 <span id="epsAvg">-</span></div>
+            ${cmtBoxHTML("voteComment", "写下整体短评（可选）…（可自动换行，点右下角放大）", voteDraftComment)}
+            <button class="btn btn-primary w-full" onclick="submitVote()"><i class="fa-solid fa-paper-plane"></i> 提交各集评分</button>
+          ` : maxScore === 100 ? `
+            <div class="mb-3">
+              <input id="voteRange" type="range" min="1" max="100" step="1" value="${voteDraftScore || 1}" oninput="syncVoteScore(this.value)">
+              <div class="flex items-center justify-between mt-2 gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-gray-500">评分</span>
+                  <input id="voteNumber" type="number" min="1" max="100" value="${voteDraftScore || 1}" oninput="syncVoteScore(this.value)" class="input !w-20 text-center">
+                </div>
+                <span id="voteHint" class="text-lg font-extrabold" style="color:#c09a5b">${voteDraftScore || 1} 分</span>
+              </div>
+            </div>
+            ${cmtBoxHTML("voteComment", "写下你的短评…（可自动换行，点右下角放大）", voteDraftComment)}
+            <button class="btn btn-primary w-full" onclick="submitVote()"><i class="fa-solid fa-paper-plane"></i> 提交评分</button>
+          ` : `
+            <div id="voteStars" class="flex gap-1 mb-3 flex-wrap items-center">${starsHTML(voteDraftScore, "setVoteScore", maxScore)}</div>
+            ${cmtBoxHTML("voteComment", "写下你的短评…（可自动换行，点右下角放大）", voteDraftComment)}
+            <button class="btn btn-primary w-full" onclick="submitVote()"><i class="fa-solid fa-paper-plane"></i> 提交评分</button>
+          `}
+        </div>
+
+        <!-- 成员提交状态 -->
+        <div class="glass p-4">
+          <div class="font-semibold mb-3">${modeLabel(mode)} · 成员提交状态 <span class="text-gray-500 text-xs">${submittedCount}/${members.length}</span></div>
+          <div class="space-y-2">
+            ${members.map(m => {
+              const s = modeS[m];
+              const isMe = m === myNick;
+              const canSee = showOthers || isMe;
+              return `
+              <div class="member-row !py-2">
+                <div class="avatar" style="width:26px;height:26px;font-size:12px;background:${isMe ? "#a5b28a" : "#d4c4a8"}">${escMsg(m[0] || "?")}</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-semibold truncate">${escMsg(m)}${isMe ? ' <span class="text-[10px] text-indigo-300">(我)</span>' : ""}</div>
+                  ${canSee && s ? `<div class="text-xs text-gray-400 truncate">${s.comment ? escMsg(s.comment) : (mode === "eps" ? "各集已打分" : "暂无评论")}</div>` : ""}
+                </div>
+                <span class="flex items-center gap-2">
+                  ${canSee && s ? `<span class="font-bold text-sm" style="color:#c09a5b">${shortScore(s.score)}</span>` : ""}
+                  ${s ? `<span class="step-done"><i class="fa-solid fa-circle-check"></i></span>` : `<span class="step-pending"><i class="fa-regular fa-circle"></i></span>`}
+                </span>
+              </div>`;
+            }).join("")}
+          </div>
+          ${modeAllSubmitted(mode, a.id) ? `
+            <button class="btn btn-primary w-full mt-3" onclick="openStats('${a.id}')"><i class="fa-solid fa-chart-simple"></i> 查看统计</button>
+          ` : ""}
+        </div>
+
+        ${isOwner ? `
+          <div class="flex justify-end gap-2">
+            <button class="btn" onclick="prevAnime()" ${room.currentIndex <= 0 && modeIdx <= 0 ? "disabled" : ""}><i class="fa-solid fa-backward"></i> 上一步</button>
+            <button class="btn btn-primary" onclick="nextAnime()"><i class="fa-solid fa-forward"></i> ${modeIdx + 1 >= modeTotal ? "进入下一部" : "进入下一阶段"}</button>
+          </div>
+        ` : `<div class="text-center text-xs text-gray-500">等待房主切换…</div>`}
+      </div>
+    </div>`;
+  renderProgressList();
+  renderChat();
+}
+
+/* ---------- 多模式评分辅助 ---------- */
+function modeDesc(mode, a) {
+  if (mode === "expect") return "番剧开播前的预期评分，之后可对照实际观感。";
+  if (mode === "eps") return `给每一集单独打分（共 ${a.episodes} 集），留空的集视为未评分。`;
+  return "追完全片后的完结总评。";
+}
+function epsInputHTML(a, maxScore, prev) {
+  let h = "";
+  for (let i = 1; i <= a.episodes; i++) {
+    const v = (prev && prev[i] != null) ? prev[i] : "";
+    h += `<label class="flex flex-col items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-1 py-2">
+      <span class="text-[10px] text-gray-500">第${i}集</span>
+      <span class="text-[10px] text-gray-600">${epAirDate(a, i)}</span>
+      <input type="number" min="1" max="${maxScore}" step="1" value="${v}" class="eps-score-input w-full text-center input !py-1 !px-0 text-sm" data-ep="${i}" oninput="onEpsInput()" placeholder="-">
+    </label>`;
+  }
+  return h;
+}
+function onEpsInput() {
+  const vals = [...document.querySelectorAll(".eps-score-input")].map(i => parseInt(i.value, 10)).filter(v => !isNaN(v));
+  const filled = $("epsFilled"); if (filled) filled.textContent = vals.length;
+  const avg = $("epsAvg"); if (avg) avg.textContent = vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1) : "-";
+}
+function collectEpsScores() {
+  const out = {};
+  let any = false;
+  document.querySelectorAll(".eps-score-input").forEach(i => {
+    const v = parseInt(i.value, 10);
+    if (!isNaN(v)) { out[+i.dataset.ep] = v; any = true; }
+  });
+  return any ? out : null;
+}
+/* 分数转数字：数字直接返回，各集对象返回其平均 */
+function scoreToNum(sc) {
+  if (typeof sc === "number") return sc;
+  if (sc && typeof sc === "object") {
+    const vals = Object.values(sc).filter(v => typeof v === "number");
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  }
+  return null;
+}
+function modeAvg(nums) {
+  const vals = nums.map(scoreToNum).filter(v => v != null);
+  return vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1) : null;
+}
+function shortScore(sc) {
+  if (typeof sc === "number") return sc;
+  if (sc && typeof sc === "object") {
+    const vals = Object.values(sc).filter(v => typeof v === "number");
+    return vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1) : "—";
+  }
+  return "—";
+}
+function submittedScoreHTML(mode, s) {
+  if (!s) return "";
+  if (mode === "eps") {
+    const vals = Object.values(s.score || {}).filter(v => typeof v === "number");
+    const avg = vals.length ? (vals.reduce((x, v) => x + v, 0) / vals.length).toFixed(1) : "—";
+    return `${avg}<span class="text-xs text-gray-400"> 分 · ${vals.length} 集</span>`;
+  }
+  return `${s.score}<span class="text-xs text-gray-400"> 分</span>`;
+}
+function modeAllSubmitted(mode, animeId) {
+  if (!room) return false;
+  const members = Object.keys(room.members);
+  if (!members.length) return false;
+  const s = (room.scores[animeId] || {})[mode] || {};
+  return members.every(m => s[m]);
+}
+function animeAllModesSubmitted(animeId) {
+  return room.config.modes.every(m => modeAllSubmitted(m, animeId));
+}
+
+/* 左侧评分进度名单（全员可见，已评分可点击查看统计） */
+function renderProgressList() {
+  if (!room || !$("progressList")) return;
+  const list = quarterAnimes();
+  const members = Object.keys(room.members);
+  const modes = room.config.modes;
+  $("progressList").innerHTML = list.map((a, i) => {
+    const done = animeAllModesSubmitted(a.id);
+    const cur = i === room.currentIndex;
+    const finished = i < room.currentIndex || done;
+    const modeMarks = modes.map(m => {
+      const s = (room.scores[a.id] || {})[m] || {};
+      const ok = members.length > 0 && members.every(mem => s[mem]);
+      const avg = modeAvg(members.filter(mem => s[mem]).map(mem => s[mem].score));
+      return `<span class="text-[9px] ${ok ? "step-done" : "text-gray-500"}"><i class="fa-solid ${MODE_ICONS[m]} mr-0.5"></i>${ok && avg != null ? avg : "—"}</span>`;
+    }).join("");
+    return `
+    <div class="w-full text-left flex items-center gap-2 p-2 rounded-lg border text-sm transition ${cur
+      ? "border-white/10 bg-white/10 font-semibold"
+      : finished ? "border-white/10 bg-white/5 hover:bg-white/10 cursor-pointer"
+      : "border-transparent opacity-45"}"
+      ${finished && !cur ? `onclick="openStats('${a.id}')"` : ""}>
+      <span class="flex-none">${coverThumbHTML(a, 26)}</span>
+      <div class="flex-1 min-w-0">
+        <div class="truncate">${a.title}</div>
+        <div class="flex gap-1.5 mt-0.5">${modeMarks}</div>
+      </div>
+      ${cur
+        ? '<span class="text-[10px] text-indigo-400"><i class="fa-solid fa-pen"></i></span>'
+        : finished
+          ? '<span class="step-done text-[10px]"><i class="fa-solid fa-circle-check"></i></span>'
+          : ""}
+    </div>`;
+  }).join("");
+}
+
+/* 房主返回上一部 */
+function prevAnime() {
+  if (!room || room.phase !== "voting") return;
+  const modes = room.config.modes;
+  const modeIdx = modes.indexOf(room.currentMode);
+  if (modeIdx > 0) {
+    room.currentMode = modes[modeIdx - 1];
+    saveRoom();
+    render();
+  } else if (room.currentIndex <= 0) {
+    toast("已经是第一步了"); return;
+  } else {
+    room.currentIndex--;
+    room.currentMode = modes[modes.length - 1];
+    saveRoom();
+    render();
+  }
+}
+
+/* ============================================================
+ * 房间聊天室（消息存于 room.chat，随 saveRoom/watch 实时同步）
+ * ============================================================ */
+function chatList() {
+  if (!room.chat) room.chat = [];
+  return room.chat;
+}
+
+/* 柔和化渐变：与米色背景混合，避免鲜艳色块（缺字段时兜底默认色） */
+function softGradient(c1, c2) {
+  if (!c1 || !String(c1).startsWith("#")) c1 = "#8b7355";
+  if (!c2 || !String(c2).startsWith("#")) c2 = "#b5a585";
+  const mix = (hex, f) => {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.round(((n >> 16) & 255) * (1 - f) + 245 * f);
+    const g = Math.round(((n >> 8) & 255) * (1 - f) + 240 * f);
+    const b = Math.round((n & 255) * (1 - f) + 230 * f);
+    return `rgb(${r},${g},${b})`;
+  };
+  return `linear-gradient(135deg, ${mix(c1, .72)}, ${mix(c2, .78)})`;
+}
+
+/* 封面渲染：有 cover 图片显示图片，无图降级为 emoji + 渐变（size 控制 emoji 字号） */
+function coverHTML(a, size = "56px") {
+  const e = a && a.emoji ? a.emoji : "❓";
+  if (a && a.cover) {
+    return `<img src="${a.cover}" alt="${a.title || ""}" class="cover-img" loading="lazy" onerror="this.outerHTML='<div class=&quot;cover-emoji&quot; style=&quot;background:${softGradient(a.gradient[0], a.gradient[1])};font-size:${size}&quot;>${e}</div>'">`;
+  }
+  return `<div class="cover-emoji" style="background:${softGradient(a.gradient[0], a.gradient[1])};font-size:${size}">${e}</div>`;
+}
+
+/* 列表小图标：图片或 emoji（size 为边长像素） */
+function coverThumbHTML(a, size = 32) {
+  const e = a && a.emoji ? a.emoji : "❓";
+  const style = `width:${size}px;height:${size}px;border-radius:8px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(size * .55)}px;vertical-align:middle;overflow:hidden`;
+  if (a && a.cover) return `<img src="${a.cover}" alt="${a.title || ""}" style="${style};object-fit:cover" loading="lazy" onerror="this.remove()">`;
+  return `<span style="${style};background:${softGradient(a.gradient[0], a.gradient[1])}">${e}</span>`;
+}
+
+function chatColor(nick) {
+  const palettes = [
+    ["#d4c4a8", "#c0a880"], ["#a5b28a", "#8a9a6b"], ["#c9a86b", "#b8905a"],
+    ["#8aa8b8", "#6b8fa0"], ["#c79a8a", "#b07f6a"], ["#b0a080", "#9a8a6a"],
+  ];
+  let h = 0;
+  for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) >>> 0;
+  return palettes[h % palettes.length];
+}
+
+function escMsg(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderChat() {
+  if (!room) return;
+  const isVoting = room.phase === "voting";
+  const countEl = isVoting ? $("chatCount") : $("chatCountLobby");
+  const el = isVoting ? $("chatList") : $("chatListLobby");
+  if (!countEl || !el) return;
+  const list = chatList();
+  countEl.textContent = list.length + " 条";
+  // 用户未上滑查看历史时才自动滚到底部
+  const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  el.innerHTML = list.map(c => {
+    if (c.sys) {
+      return `
+      <div class="flex justify-center my-0.5">
+        <div class="inline-flex items-center gap-1.5 text-[11px] text-amber-900 bg-amber-100/70 border border-amber-400/40 px-2.5 py-1 rounded-full max-w-[92%]">
+          <i class="fa-solid fa-bell shrink-0"></i><span class="break-words">${escMsg(c.msg)}</span>
+        </div>
+      </div>`;
+    }
+    const mine = c.nick === myNick;
+    const [c1, c2] = chatColor(c.nick);
+    const t = new Date(c.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `
+    <div class="flex gap-2 ${mine ? "justify-end" : ""}">
+      <div class="avatar shrink-0" style="width:28px;height:28px;font-size:12px;background:${c1}">${escMsg(c.nick[0] || "?")}</div>
+      <div class="max-w-[78%] min-w-0">
+        <div class="text-[10px] text-gray-500 mb-0.5 ${mine ? "text-right" : ""}">${escMsg(c.nick)} · ${t}</div>
+        <div class="px-3 py-1.5 rounded-2xl text-sm break-words ${mine
+          ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-tr-sm"
+          : "bg-white/[.06] border border-white/10 rounded-tl-sm"}">${escMsg(c.msg)}</div>
+      </div>
+    </div>`;
+  }).join("");
+  if (stick || list.length <= 3) el.scrollTop = el.scrollHeight;
+}
+
+function sendChat() {
+  if (!room) return;
+  const input = room.phase === "voting" ? $("chatInput") : $("chatInputLobby");
+  if (!input) return;
+  const msg = (input.value || "").trim();
+  if (!msg) return;
+  chatList().push({ nick: myNick, msg, ts: Date.now() });
+  // 限制消息条数，防止房间文档过大
+  if (room.chat.length > 200) room.chat = room.chat.slice(-200);
+  saveRoom();
+  input.value = "";
+  renderChat();
+}
+
+function currentAnimeId() {
+  const a = getCurrentAnime();
+  return a ? a.id : "";
+}
+
+/* 综合分：完结评分 > 各集平均 > 开播前预期，按房间启用的模式取第一个有分的 */
+function finalScoreOf(a) {
+  const modes = room.config.modes;
+  const members = Object.keys(room.members);
+  const pick = ["final", "eps", "expect"].find(m => modes.includes(m));
+  if (!pick) return null;
+  const s = (room.scores[a.id] || {})[pick] || {};
+  const v = modeAvg(members.filter(m => s[m]).map(m => s[m].score));
+  return v != null ? v : null;
+}
+
+function fmtScore(v) { v = Math.round((v || 0) * 2) / 2; return v % 1 ? v.toFixed(1) : String(v); }
+function starsHTML(score, fn, max = 10) {
+  let h = "";
+  for (let i = 1; i <= max; i++) {
+    const full = score >= i;
+    const half = !full && score >= i - 0.5;
+    const cls = full ? "star active" : half ? "star half" : "star";
+    h += `<span class="${cls}" title="${half ? (i - 0.5) + " 分" : i + " 分"}" onmouseenter="previewVoteScore(${half ? i - 0.5 : i})" onmouseleave="clearVotePreview()" onclick="${fn}(${i})">★</span>`;
+  }
+  h += `<span id="voteHint" class="star-hint">${score ? fmtScore(score) + " 分" : "点击星星评分"}</span>`;
+  return h;
+}
+function setVoteScore(v) {
+  voteDraftScore = voteDraftScore === v ? v - 0.5 : v;
+  const el = $("voteStars");
+  if (el) el.innerHTML = starsHTML(voteDraftScore, "setVoteScore", room.config.maxScore);
+  clearVotePreview();
+}
+function previewVoteScore(v) { const el = $("voteHint"); if (el) el.textContent = fmtScore(v) + " 分"; }
+function clearVotePreview() { const el = $("voteHint"); if (el) el.textContent = voteDraftScore ? fmtScore(voteDraftScore) + " 分" : "点击星星评分"; }
+function syncVoteScore(v) {
+  let n = parseInt(v, 10);
+  if (isNaN(n)) return;
+  n = Math.max(1, Math.min(100, n));
+  voteDraftScore = n;
+  const range = $("voteRange"); if (range) range.value = n;
+  const num = $("voteNumber"); if (num) num.value = n;
+  const hint = $("voteHint"); if (hint) hint.textContent = n + " 分";
+}
+
+async function submitVote() {
+  const a = getCurrentAnime();
+  if (!a) return;
+  const mode = room.currentMode;
+  let score;
+  if (mode === "eps") {
+    score = collectEpsScores();
+    if (!score) { toast("请至少给一集打分", true); return; }
+  } else {
+    if (!voteDraftScore) { toast("请选择分数", true); return; }
+    score = voteDraftScore;
+  }
+  room.scores[a.id] = room.scores[a.id] || {};
+  room.scores[a.id][mode] = room.scores[a.id][mode] || {};
+  room.scores[a.id][mode][myNick] = { score, comment: ($("voteComment") ? $("voteComment").value : "").trim() };
+  saveRoom();
+  render();
+  toast("评分已提交，不可修改");
+  if (modeAllSubmitted(mode, a.id)) openStats(a.id);
+}
+
+/* 修改评分（房主可改，或需全员同意——简化为本人可改自己的） */
+function changeMyVote() {
+  const a = getCurrentAnime();
+  if (!a) return;
+  const mode = room.currentMode;
+  const s = room.scores[a.id] && room.scores[a.id][mode] && room.scores[a.id][mode][myNick];
+  voteDraftScore = (s && typeof s.score === "number") ? s.score : 0;
+  voteDraftComment = s ? s.comment : "";
+  // 各集评分为对象：暂存以便回填输入框
+  voteEpsPrev = (mode === "eps" && s && s.score && typeof s.score === "object")
+    ? { key: a.id + "|" + mode, score: s.score }
+    : null;
+  if (room.scores[a.id] && room.scores[a.id][mode]) {
+    room.scores[a.id][mode][myNick] = undefined;
+    delete room.scores[a.id][mode][myNick];
+  }
+  saveRoom();
+  render();
+  toast("可以重新提交评分");
+}
+
+async function nextAnime() {
+  const list = quarterAnimes();
+  const modes = room.config.modes;
+  const modeIdx = modes.indexOf(room.currentMode);
+  if (modeIdx + 1 < modes.length) {
+    // 同一部番进入下一评分阶段
+    room.currentMode = modes[modeIdx + 1];
+    saveRoom();
+    render();
+  } else if (room.currentIndex + 1 >= list.length) {
+    // 全部评完
+    room.phase = "finished";
+    saveRoom();
+    render();
+    toast("全部评分完成！生成排行榜");
+  } else {
+    room.currentIndex++;
+    room.currentMode = modes[0];
+    saveRoom();
+    render();
+  }
+}
+
+function backToLobby() {
+  room.phase = "lobby";
+  Object.values(room.members).forEach(m => { if (!m.isOwner) m.ready = false; });
+  saveRoom();
+  render();
+  toast("已返回大厅，请成员重新准备");
+}
+
+/* ============================================================
+ * 统计弹窗
+ * ============================================================ */
+function openStats(animeId) {
+  const a = library.find(x => x.id === animeId);
+  if (!a) return;
+  const members = Object.keys(room.members);
+  const modes = room.config.modes;
+  const tabs = modes.map(m => {
+    const s = (room.scores[animeId] || {})[m] || {};
+    const list = members.filter(mem => s[mem]).map(mem => ({ nick: mem, score: s[mem].score, comment: s[mem].comment }));
+    return { m, list };
+  });
+  const any = tabs.some(t => t.list.length);
+  if (!any) { toast("暂无评分", true); return; }
+
+  const blocks = tabs.map(({ m, list }) => {
+    if (!list.length) return "";
+    const vals = list.map(x => scoreToNum(x.score)).filter(v => v != null);
+    const avg = vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2) : "—";
+    const max = vals.length ? shortScore(vals.reduce((x, y) => Math.max(x, y))) : "—";
+    const min = vals.length ? shortScore(vals.reduce((x, y) => Math.min(x, y))) : "—";
+    const sorted = [...list].sort((x, y) => scoreToNum(y.score) - scoreToNum(x.score));
+    return `
+    <div class="mb-5">
+      <div class="flex items-center gap-2 mb-3"><i class="fa-solid ${MODE_ICONS[m]} text-amber-400"></i><span class="font-semibold">${modeLabel(m)}</span><span class="text-xs text-gray-500">${list.length} 人参与</span></div>
+      <div class="grid grid-cols-3 gap-3 mb-3">
+        <div class="glass p-4 text-center"><div class="text-xs text-gray-500 mb-1">平均分</div><div class="text-2xl font-extrabold" style="color:#c09a5b">${avg}</div></div>
+        <div class="glass p-4 text-center"><div class="text-xs text-gray-500 mb-1">最高分</div><div class="text-2xl font-extrabold" style="color:#7d8f69">${max}</div></div>
+        <div class="glass p-4 text-center"><div class="text-xs text-gray-500 mb-1">最低分</div><div class="text-2xl font-extrabold" style="color:#b06a5a">${min}</div></div>
+      </div>
+      <div class="space-y-2">
+        ${sorted.map((x, i) => `
+          <div class="member-row">
+            <div class="text-amber-400 font-bold w-6 text-center">${i + 1}</div>
+            <div class="avatar" style="background:#d4c4a8">${escMsg(x.nick[0] || "?")}</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold">${escMsg(x.nick)}</div>
+              <div class="text-xs text-gray-400 truncate">${x.comment ? escMsg(x.comment) : (m === "eps" ? "各集平均 " + shortScore(x.score) + " 分" : "")}</div>
+            </div>
+            <span class="font-bold text-lg" style="color:#c09a5b">${shortScore(x.score)}</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  $("statsBody").innerHTML = `
+    <div class="text-center mb-4">
+      <div class="w-24 aspect-[4/5] mx-auto mb-2 rounded-2xl overflow-hidden">${coverHTML(a, "48px")}</div>
+      <h3 class="text-xl font-bold">${a.title}</h3>
+      <div class="text-xs text-gray-500">联合评分统计</div>
+    </div>
+    ${blocks}
+    <button class="btn btn-primary w-full" onclick="closeStats()">关闭</button>`;
+  $("statsModal").classList.add("show");
+}
+function closeStats() { $("statsModal").classList.remove("show"); }
+
+/* ---------- 番剧详情悬浮页 ---------- */
+function animeById(id) { return library.find(a => a.id === id) || null; }
+function openAnimeInfo(id) {
+  const a = animeById(id);
+  if (!a) return;
+  const staff = a.staff || {};
+  const kv = (label, val) => val ? `<div class="rounded-lg bg-white/5 border border-white/10 px-3 py-2"><div class="text-gray-500">${label}</div><div class="font-semibold mt-0.5">${val}</div></div>` : "";
+  $("animeModalBody").innerHTML = `
+    <div class="flex flex-col sm:flex-row gap-5">
+      <div class="w-36 sm:w-44 flex-none mx-auto sm:mx-0">
+        <div class="rounded-xl aspect-[4/5] overflow-hidden">${coverHTML(a, "64px")}</div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h2 class="text-xl font-bold mb-2 leading-snug">${a.title}</h2>
+        <div class="flex flex-wrap gap-1.5 mb-3">${(a.tags || []).map(t => `<span class="text-[11px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10">#${t}</span>`).join("")}</div>
+        <p class="text-xs text-gray-500 leading-relaxed mb-4">${a.desc}</p>
+        <div class="grid grid-cols-2 gap-2 text-[11px]">
+          ${kv("开播", dateStr(a))}
+          ${kv("集数", a.episodes ? a.episodes + " 集" : "")}
+          ${kv("来源", a.source || "待定")}
+          ${kv("类型", typeLabelOf(a))}
+          ${kv("原作", staff.original)}
+          ${kv("导演", staff.director)}
+          ${kv("编剧", staff.writer)}
+          ${kv("音乐", staff.music)}
+          ${kv("制作", staff.studio)}
+          ${staff.cast && staff.cast.length ? `<div class="col-span-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2"><div class="text-gray-500">声优</div><div class="font-semibold mt-0.5 flex flex-wrap gap-x-2">${staff.cast.join("、")}</div></div>` : ""}
+        </div>
+      </div>
+    </div>`;
+  $("animeModal").classList.add("show");
+}
+function closeAnimeInfo() { $("animeModal").classList.remove("show"); }
+
+/* ============================================================
+ * 最终结果页：排行榜 + 导出
+ * ============================================================ */
+function renderResult() {
+  const list = quarterAnimes();
+  const rows = list.map(a => {
+    const members = Object.keys(room.members);
+    const modes = room.config.modes;
+    const scores = room.scores[a.id] || {};
+    const mStats = {};
+    modes.forEach(m => {
+      const s = scores[m] || {};
+      const sc = members.filter(mem => s[mem]);
+      mStats[m] = { count: sc.length, avg: modeAvg(sc.map(mem => s[mem].score)) };
+    });
+    const avg = finalScoreOf(a);
+    return { a, mStats, avg: avg != null ? avg : 0, avgFixed: avg != null ? avg : "—" };
+  }).sort((x, y) => y.avg - x.avg);
+
+  const synced = localStorage.getItem("dpcca_room_sync_" + room.id) === "1";
+
+  $("resultBody").innerHTML = `
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div>
+        <h2 class="text-2xl font-bold"><i class="fa-solid fa-trophy mr-2" style="color:#c09a5b"></i>评分排行榜</h2>
+        <div class="text-xs text-gray-500 mt-1">${configDateText(room.config)} · ${configSourceText(room.config)} · ${configTypeText(room.config)} · 房间 ${maskId()} · 共 ${rows.length} 部番剧</div>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn-primary" onclick="syncMyScores()"><i class="fa-solid fa-arrow-right-to-bracket"></i> ${synced ? "已同步（可再点一次）" : "同步我的评分到追番页"}</button>
+        <button class="btn btn-primary" onclick="exportRankImage()"><i class="fa-solid fa-image"></i> 导出排行榜长图</button>
+        <button class="btn" onclick="exportCSV()"><i class="fa-solid fa-file-csv"></i> 导出 CSV</button>
+        <button class="btn" onclick="backToLobby()"><i class="fa-solid fa-arrow-left"></i> 返回</button>
+        <button class="btn" onclick="exitRoom()"><i class="fa-solid fa-arrow-right-from-bracket"></i> 退出房间</button>
+      </div>
+    </div>
+    <div id="rankList" class="space-y-2">
+      ${rows.map((r, i) => `
+        <div class="rank-row glass p-3 flex items-center gap-4 flex-wrap">
+          <div class="w-8 text-center font-extrabold ${i === 0 ? "text-amber-400" : i === 1 ? "text-gray-300" : i === 2 ? "text-orange-400" : "text-gray-600"}">${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}</div>
+          <button class="w-12 aspect-[4/5] rounded-xl overflow-hidden flex-none group" onclick="openAnimeInfo('${r.a.id}')" title="查看番剧详情"><span class="block w-full h-full transition group-hover:opacity-75">${coverHTML(r.a, "22px")}</span></button>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold truncate">${r.a.title}</div>
+            <div class="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+              ${room.config.modes.map(m => `<span><i class="fa-solid ${MODE_ICONS[m]} mr-1"></i>${modeLabel(m)}：${r.mStats[m] && r.mStats[m].count ? `<b style="color:#c09a5b">${r.mStats[m].avg}</b>` : "—"}（${r.mStats[m] ? r.mStats[m].count : 0}人）</span>`).join("")}
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xl font-extrabold" style="color:#c09a5b">${r.avgFixed}</div>
+            <div class="text-[10px] text-gray-500">综合分</div>
+          </div>
+        </div>`).join("")}
+    </div>`;
+}
+
+/* 房间结算后：把本人在房间中打过分（任意模式）的番剧同步到「我的追番」，打分后默认追番中 */
+async function syncMyScores() {
+  try {
+    const db = await dataProvider._cloud._getDB();
+    const auth = dataProvider._cloud._auth;
+    const uid = (auth && auth.currentUser && auth.currentUser.uid) || "";
+    const col = db.collection("user_anime");
+    // 与「我的追番」页策略一致：只读写身份文档（where({_openid}) 命中的文档），不创建主文档
+    let userData = {};
+    let legacyDocId = "";
+    try {
+      const res = await col.where({ _openid: "{openid}" }).get();
+      const list = (res && res.data) || [];
+      const item = list.find(x => x && x.data && typeof x.data === "object" && Object.keys(x.data).length) || list[0];
+      if (item) { userData = (item.data && typeof item.data === "object") ? item.data : {}; legacyDocId = item._id || ""; }
+    } catch (e) {}
+    let added = 0;
+    quarterAnimes().forEach(a => {
+      const scores = room.scores[a.id] || {};
+      const mine = {};
+      room.config.modes.forEach(m => {
+        const s = scores[m];
+        if (s && s[myNick]) mine[m] = s[myNick];
+      });
+      if (!Object.keys(mine).length) return;
+      const ud = userData[a.id] = userData[a.id] || {};
+      // 打分后默认追番中（已有状态则保留）
+      if (!ud.status) ud.status = "watching";
+      ud.scores = ud.scores || {};
+      if (mine.expect) ud.scores.open = { score: mine.expect.score, comment: mine.expect.comment || "" };
+      if (mine.final) ud.scores.final = { score: mine.final.score, comment: mine.final.comment || "" };
+      if (mine.eps) {
+        ud.episodes = ud.episodes || {};
+        ud.episodes[a.id] = ud.episodes[a.id] || {};
+        ud.episodes[a.id].epScores = ud.episodes[a.id].epScores || {};
+        Object.entries(mine.eps.score || {}).forEach(([ep, sc]) => {
+          ud.episodes[a.id].epScores[ep] = { score: sc, comment: mine.eps.comment || "" };
+        });
+      }
+      added++;
+    });
+    if (!added) { toast("你还没有给任何番剧打分，无法同步", true); return; }
+    // 写回：与「我的追番」页一致 —— 身份文档存在则 update；否则 add 创建（服务端自动注入 _openid）
+    let saved = false;
+    if (legacyDocId) { try { await col.doc(legacyDocId).update({ data: userData }); saved = true; } catch (e) {} }
+    if (!saved) {
+      const a = await col.add({ data: userData, userId: uid });
+      if (!a || !a.id) throw new Error("云端创建失败");
+      saved = true;
+    }
+    if (!saved) throw new Error("云端写入失败");
+    localStorage.setItem("dpcca_room_sync_" + room.id, "1");
+    renderResult();
+    toast(`已同步 ${added} 部番剧到「我的追番」，默认设为追番中`);
+  } catch (e) {
+    console.error(e);
+    toast("同步失败，请稍后重试", true);
+  }
+}
+
+/* 排行榜长图 */
+async function exportRankImage() {
+  const list = quarterAnimes();
+  const modes = room.config.modes;
+  const rows = list.map(a => {
+    const members = Object.keys(room.members);
+    const mStats = {};
+    modes.forEach(m => {
+      const s = (room.scores[a.id] || {})[m] || {};
+      const sc = members.filter(mem => s[mem]);
+      mStats[m] = { count: sc.length, avg: modeAvg(sc.map(mem => s[mem].score)) };
+    });
+    const avg = finalScoreOf(a);
+    return { a, mStats, avg: avg != null ? avg : "—", count: Math.max(...modes.map(m => mStats[m].count), 0) };
+  }).sort((x, y) => (typeof y.avg === "number" ? y.avg : -1) - (typeof x.avg === "number" ? x.avg : -1));
+
+  // 动态创建长图容器
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "width:600px;background:#fdfaf4;border:1px solid #e6dcc8;border-radius:16px;padding:24px;color:#5c4a3d;font-family:'Noto Sans SC',sans-serif;position:fixed;left:-9999px;top:0";
+  wrap.innerHTML = `
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:22px;font-weight:800">DPCCA 评分排行榜</div>
+      <div style="font-size:12px;color:#a8988a">${configDateText(room.config)} · ${configSourceText(room.config)} · ${configTypeText(room.config)} · 房间 ${maskId()} · 共 ${rows.length} 部番剧</div>
+    </div>
+    ${rows.map((r, i) => `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;margin-bottom:8px;background:#f1e9da;border-radius:12px;border:1px solid #e6dcc8">
+        <div style="width:30px;text-align:center;font-weight:800;font-size:16px;${i === 0 ? "color:#c09a5b" : i === 1 ? "color:#a8988a" : i === 2 ? "color:#c07f5a" : "color:#b3a08e"}">${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}</div>
+        <div style="width:52px;aspect-ratio:4/5;border-radius:10px;flex:none;overflow:hidden">${coverHTML(r.a, "24px")}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.a.title}</div>
+          <div style="font-size:11px;color:#a8988a;margin-top:2px">${modes.map(m => `${modeLabel(m)} <b>${r.mStats[m].count ? r.mStats[m].avg : "—"}</b>`).join(" · ")}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:800;color:#c09a5b">${r.avg}</div>
+          <div style="font-size:10px;color:#a8988a">综合分</div>
+        </div>
+      </div>`).join("")}
+    <div style="text-align:center;font-size:10px;color:#b3a08e;margin-top:8px">生成于 ${new Date().toLocaleString()}</div>`;
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: null, useCORS: true });
+    const link = document.createElement("a");
+    link.download = `DPCCA_排行榜_${room.id}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    toast("排行榜长图已导出");
+  } catch (e) {
+    console.error(e);
+    toast("导出失败，请重试", true);
+  } finally {
+    wrap.remove();
+  }
+}
+
+/* CSV 导出 */
+function exportCSV() {
+  const list = quarterAnimes();
+  const members = Object.keys(room.members);
+  const modes = room.config.modes;
+  const header = ["番剧", "开播日期", "综合分", ...modes.map(m => modeLabel(m) + " 平均"), "评分人数",
+    ...members.map(m => m + " 综合分"), ...members.map(m => m + " 评论")];
+  const rows = list.map(a => {
+    const scores = room.scores[a.id] || {};
+    const scAll = members.filter(m => modes.some(md => (scores[md] || {})[m]));
+    const avg = finalScoreOf(a);
+    const modeAvgs = modes.map(m => {
+      const s = scores[m] || {};
+      const v = modeAvg(members.filter(mem => s[mem]).map(mem => s[mem].score));
+      return v != null ? v : "";
+    });
+    return [a.title, dateStr(a), avg != null ? avg : "", ...modeAvgs, scAll.length,
+      ...members.map(m => {
+        const nums = modes.filter(md => (scores[md] || {})[m]).map(md => scoreToNum(scores[md][m].score));
+        return nums.length ? (nums.reduce((x, v) => x + v, 0) / nums.length).toFixed(2) : "";
+      }),
+      ...members.map(m => {
+        const c = modes.filter(md => (scores[md] || {})[m]).map(md => (scores[md][m].comment || "")).filter(Boolean).join(" / ");
+        return c ? `"${c.replace(/"/g, '""')}"` : "";
+      })];
+  });
+  const csv = "\uFEFF" + [header.join(","), ...rows.map(r => r.join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.download = `DPCCA_评分数据_${room.id}.csv`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+  toast("CSV 已导出，可用 Excel 打开");
+}
+
+/* ============================================================
+ * 创建 / 加入房间
+ * ============================================================ */
+function genRoomId() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let id = "";
+  for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
+async function createRoom() {
+  const nick = ensureNick();
+  if (!nick) return;
+  let id, existing;
+  do {
+    id = genRoomId();
+    existing = await loadRoomFromCloud(id);
+  } while (existing);
+
+  room = {
+    id,
+    // 新建房间默认不限定年份/月份/季度/来源/类型（空数组 = 不限），评分模式留空由房主勾选后应用
+    config: {
+      years: [], months: [], quarters: [], sources: [], types: [],
+      year: 0, month: 0, source: "全部来源", type: "全部类型",   // 旧字段摘要（兼容）
+      maxScore: 10, modes: [],
+    },
+    members: { [nick]: { isOwner: true, online: true, ready: true, joinedAt: Date.now() } },
+    selectedIds: [],
+    scores: {},
+    chat: [],
+    currentIndex: 0,
+    phase: "lobby",
+    lock: { on: false, pwd: "" },   // v3.0 密码锁
+    idHidden: false,                // v3.0 房间号隐藏
+    createdAt: Date.now(),
+  };
+  saveRoom();
+  syncRoom(id);
+  render();
+  saveRoomSession();
+  toast("房间创建成功：" + id);
+}
+
+/* v3.0：校验房号与密码锁，通过则返回房间对象（并负责展开/收起密码输入框） */
+async function tryJoinRoom(rawId) {
+  const id = String(rawId || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(id)) { toast("请输入 6 位房间号", true); return null; }
+  const saved = await loadRoomFromCloud(id);
+  if (!saved) { toast("房间不存在，请检查房间号", true); return null; }
+  const r = migrateRoom(saved);
+  const nick = myNick || getMyNick();
+  const already = !!(nick && r.members[nick]);
+  if (!already && r.lock && r.lock.on) {
+    const wrap = $("joinPwdWrap");
+    if (wrap) wrap.classList.remove("hidden");
+    const pwd = ($("joinPwdInput") && $("joinPwdInput").value) || "";
+    if (!pwd) {
+      toast("该房间已启用密码锁，请输入密码后再次点击「加入」", true);
+      if ($("joinPwdInput")) $("joinPwdInput").focus();
+      return null;
+    }
+    if (hashPwd(pwd) !== r.lock.pwd) {
+      toast("房间密码不正确", true);
+      if ($("joinPwdInput")) { $("joinPwdInput").value = ""; $("joinPwdInput").focus(); }
+      return null;
+    }
+  }
+  const w = $("joinPwdWrap"); if (w) w.classList.add("hidden");
+  const pi = $("joinPwdInput"); if (pi) pi.value = "";
+  return r;
+}
+
+async function joinRoomFromInput() {
+  const nick = ensureNick();
+  if (!nick) return;
+  const r = await tryJoinRoom($("roomInput").value);
+  if (r) enterRoom(r);
+}
+
+function enterRoom(saved) {
+  room = migrateRoom(saved);
+  lockPanelOpen = false;   // 进入 / 切换房间时密码锁面板回到收起状态
+  if (!room.selectedIds) room.selectedIds = [];
+  const rejoin = !!room.members[myNick];
+  if (!rejoin) {
+    room.members[myNick] = { isOwner: false, online: true, ready: false, joinedAt: Date.now() };
+  } else {
+    room.members[myNick].online = true;
+    if (room.members[myNick].ready === undefined) room.members[myNick].ready = false;
+  }
+  const fixed = sanitizeRoomOwners();
+  saveRoom();
+  syncRoom(room.id);
+  // v3.0：进入房间后清掉地址栏的 ?room=，避免房主隐藏房间号后仍能从地址栏看到
+  try { if (location.search) history.replaceState(null, "", location.pathname); } catch (e) {}
+  render();
+  saveRoomSession();
+  if (fixed) toast("房间数据已自动修正");
+}
+
+/* 云状态指示 */
+async function updateCloudBadge() {
+  const badge = $("cloudBadge");
+  const label = badge.querySelector("span");
+  try {
+    if (dataProvider.USE_CLOUD) {
+      await dataProvider._cloud._getDB();
+      badge.classList.remove("off");
+      label.textContent = "云端已连接";
+    } else {
+      badge.classList.add("off");
+      label.textContent = "本地存储";
+    }
+  } catch (e) {
+    badge.classList.add("off");
+    label.textContent = "云端不可用";
+  }
+}
+
+/* ============================================================
+ * 初始化
+ * ============================================================ */
+async function initEntry() {
+  // 全局输入事件绑定（无论刷新恢复还是进入入口页都需要）
+  try {
+    $("nickInput").addEventListener("keydown", (e) => { if (e.key === "Enter") createRoom(); });
+    $("roomInput").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomFromInput(); });
+    $("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+    $("chatInputLobby").addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+  } catch (e) {}
+
+  // 优先处理刷新恢复 / 过期会话清理
+  const restored = await restoreOrCleanupRoomSession();
+  if (restored) return;
+
+  try {
+    library = await dataProvider.initAnimeData();
+  } catch (e) {
+    console.warn("云端番剧库加载失败，使用本地数据", e);
+    library = ANIME_LIBRARY;
+  }
+  myNick = getMyNick();
+  if (myNick) $("nickInput").value = myNick;
+  updateCloudBadge();
+  showView("entry");
+
+  // URL 参数携带房间号（邀请链接）
+  const params = new URLSearchParams(location.search);
+  const rid = params.get("room");
+  if (rid) {
+    if (myNick) {
+      // 已有昵称：直接走加入流程（若房间上锁会自动要求输入密码）
+      const r = await tryJoinRoom(rid);
+      if (r) { enterRoom(r); return; }
+    } else {
+      const saved = await loadRoomFromCloud(rid.toUpperCase());
+      if (saved) {
+        $("roomInput").value = rid.toUpperCase();
+        const sm = migrateRoom(saved);
+        if (sm.lock && sm.lock.on) { const w = $("joinPwdWrap"); if (w) w.classList.remove("hidden"); }
+        toast("请在邀请链接中填写昵称以加入房间 " + rid.toUpperCase());
+      } else {
+        toast("房间 " + rid.toUpperCase() + " 不存在", true);
+      }
+    }
+  }
+}
+
+initEntry();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "dpcca_auth",
+  "version": "1.0.0",
+  "description": "DPCCA 用户账号注册/登录（自定义账号密码 + 自定义登录 Ticket）",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  }
+}

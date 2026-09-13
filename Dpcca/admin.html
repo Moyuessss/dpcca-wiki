@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DPCCA 番剧管理后台</title>
+<!--
+  ============================================================
+  DPCCA · 番剧管理后台 (admin.html)
+  独立于评分库/追番清单，直接读写云数据库 anime_library 集合。
+  环境 ID：dpcca-wiki-d7g0dl19y23cd30f3
+  功能：
+    - 番剧管理：查看 / 新增 / 编辑 / 删除番剧（2026-09-12 新增筛选：年份 / 季度 / 来源 / 类型）
+    - 用户管理：查看已注册用户与游客统计、重置用户密码
+    - 管理员账号管理：新增 / 删除管理员、修改管理员密码
+  登录方式：管理员账号密码，校验在云函数 admin_login 内完成。
+  登录过期：云函数返回 AUTH_FAIL 时弹窗提示并退回登录页。
+  ============================================================
+-->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/2.32.0/cloudbase.full.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- 公告弹窗组件：本页仅用于「预览」，禁止自动弹出以免干扰管理员操作 -->
+<script>window.DPCCA_ANNOUNCE_AUTO = false;</script>
+<script src="announcement.js?v=1"></script>
+<style>
+  :root {
+    --bg: #f5f0e6;
+    --card: #fdfaf4;
+    --border: #e6dcc8;
+    --text: #5c4a3d;
+    --muted: #a8988a;
+    --primary: #d4c4a8;
+    --primary-hover: #c2ae8c;
+    --primary-soft: #efe7d9;
+    --ok: #7d8f69;
+    --warn: #c09a5b;
+    --err: #b06a5a;
+    --shadow: 0 4px 14px rgba(92, 74, 61, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: all .15s; }
+  .btn-primary { background: var(--primary); color: #4a3b2f; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { background: var(--primary-soft); }
+  .btn-danger { background: #f2e3dd; color: var(--err); border-color: #e5cfc6; }
+  .btn-danger:hover { background: #e8cfc5; }
+  .btn-sm { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
+  .inp { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 14px; background: #fffdf8; color: var(--text); outline: none; }
+  .inp:focus { border-color: #b7a586; }
+  .lbl { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .modal-mask { position: fixed; inset: 0; background: rgba(60,45,35,.45); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .modal-mask.show { opacity: 1; pointer-events: auto; }
+  .modal { background: var(--card); border-radius: 18px; max-width: 680px; width: 100%; max-height: 92vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,.18); }
+  .tag { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; line-height: 1.5; }
+  .tag-sci { background: rgba(125,143,105,.12); color: #5f7350; }
+  .tag-ep { background: rgba(192,154,91,.14); color: #a07f3e; }
+  .tag-other { background: rgba(90,113,133,.12); color: #5a7185; }
+  .tag-role-super { background: rgba(176,106,90,.12); color: #a05341; }
+  .tag-role-admin { background: rgba(125,143,105,.12); color: #5f7350; }
+  .tag-status { background: rgba(192,154,91,.14); color: #a07f3e; }
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 300; background: #3d2f26; color: #f5f0e6; padding: 10px 20px; border-radius: 12px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .toast.show { opacity: 1; }
+  .toast.err { background: #7a3a2e; }
+  .cover-preview { width: 96px; height: 120px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; flex: none; }
+  .cover-preview img { width: 100%; height: 100%; object-fit: cover; }
+  .home-card { cursor: pointer; transition: all .15s; }
+  .home-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(92,74,61,.12); }
+  .nav-link.active { background: var(--primary-soft); color: #4a3b2f; }
+  .stat-num { font-size: 28px; font-weight: 700; }
+  .switch { position: relative; display: inline-block; width: 48px; height: 27px; flex: none; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: #d8cdb8; border-radius: 999px; cursor: pointer; transition: background .18s; }
+  .switch .slider::before { content: ""; position: absolute; width: 21px; height: 21px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .18s; box-shadow: 0 1px 3px rgba(92,74,61,.3); }
+  .switch input:checked + .slider { background: #7d8f69; }
+  .switch input:checked + .slider::before { transform: translateX(21px); }
+  .switch input:focus-visible + .slider { outline: 2px solid #b58d4f; outline-offset: 2px; }
+  .anc-hint { background: var(--primary-soft); color: #6b5744; font-size: 12px; line-height: 1.8; border-radius: 12px; padding: 12px 14px; }
+  .anc-hint b { color: #4a3b2f; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d8cdb8; border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<!-- 登录层 -->
+<div id="loginLayer" class="fixed inset-0 z-[500] flex items-center justify-center" style="background:var(--bg)">
+  <div class="card p-8 w-full max-w-sm mx-4 text-center">
+    <div class="text-4xl mb-3">🔐</div>
+    <div class="text-xl font-bold mb-1">DPCCA 番剧管理后台</div>
+    <div class="text-sm text-[var(--muted)] mb-6">请输入管理员账号密码</div>
+    <input id="userInput" type="text" placeholder="账号" class="inp text-center mb-3" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('pwdInput').focus()">
+    <input id="pwdInput" type="password" placeholder="密码" class="inp text-center mb-4" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button id="loginBtn" class="btn btn-primary w-full justify-center" onclick="doLogin()">进入后台</button>
+    <div id="pwdErr" class="text-sm mt-3 hidden" style="color:var(--err)">账号或密码错误</div>
+  </div>
+</div>
+
+<!-- 顶部导航 -->
+<nav id="topNav" class="sticky top-0 z-40 border-b hidden" style="background:var(--card);border-color:var(--border)">
+  <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
+    <div class="flex items-center gap-3 min-w-0">
+      <span class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-none" style="background:linear-gradient(135deg,#7d8f69,#5a7185)">D</span>
+      <div class="min-w-0">
+        <div class="font-bold leading-tight truncate">番剧管理后台</div>
+        <div class="text-[11px] truncate" style="color:var(--muted)" id="navRole"></div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 text-sm overflow-x-auto">
+      <button class="btn btn-ghost nav-link" id="navBtn-home" onclick="showView('home')"><i class="fa-solid fa-house"></i><span class="hidden sm:inline">首页</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-anime" onclick="showView('anime')"><i class="fa-solid fa-tv"></i><span class="hidden sm:inline">番剧管理</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-users" onclick="showView('users')"><i class="fa-solid fa-users"></i><span class="hidden sm:inline">用户管理</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-reviews" onclick="showView('reviews')"><i class="fa-solid fa-comments"></i><span class="hidden sm:inline">评分与评论</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-feedback" onclick="showView('feedback')"><i class="fa-solid fa-envelope-open-text"></i><span class="hidden sm:inline">用户反馈</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-config" onclick="showView('config')"><i class="fa-solid fa-bullhorn"></i><span class="hidden sm:inline">公告弹窗</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-admins" onclick="showView('admins')"><i class="fa-solid fa-key"></i><span class="hidden sm:inline">管理员</span></button>
+      <a class="btn btn-ghost flex-none" href="index.html"><i class="fa-solid fa-star"></i><span class="hidden lg:inline">评分库</span></a>
+      <a class="btn btn-ghost flex-none" href="profile.html"><i class="fa-solid fa-list"></i><span class="hidden lg:inline">我的追番</span></a>
+      <button class="btn btn-ghost flex-none" onclick="logout()" title="退出登录"><i class="fa-solid fa-right-from-bracket"></i></button>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 py-6">
+
+  <!-- ========== 首页（管理菜单） ========== -->
+  <div id="view-home" class="hidden">
+    <div class="mb-6">
+      <div class="text-2xl font-bold mb-1">欢迎回来，<span id="homeName"></span></div>
+      <div class="text-sm" style="color:var(--muted)">请选择要管理的内容</div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="card home-card p-6" onclick="showView('anime')">
+        <div class="text-4xl mb-3">📺</div>
+        <div class="font-bold text-lg mb-1">番剧管理</div>
+        <div class="text-sm" style="color:var(--muted)">查看 / 新增 / 编辑 / 删除番剧，维护封面、简介、制作阵容等。</div>
+      </div>
+      <div class="card home-card p-6" onclick="showView('reviews')">
+        <div class="text-4xl mb-3">💬</div>
+        <div class="font-bold text-lg mb-1">评分与评论</div>
+        <div class="text-sm" style="color:var(--muted)">统一管理各番剧用户的评分评论；查看平均分、分布与趋势的可视化图表。</div>
+      </div>
+      <div class="card home-card p-6" onclick="showView('users')">
+        <div class="text-4xl mb-3">👥</div>
+        <div class="font-bold text-lg mb-1">用户管理</div>
+        <div class="text-sm" style="color:var(--muted)">查看已注册用户与游客统计，重置用户密码为随机乱码。</div>
+      </div>
+      <div class="card home-card p-6" onclick="showView('admins')">
+        <div class="text-4xl mb-3">🔑</div>
+        <div class="font-bold text-lg mb-1">管理员账号管理</div>
+        <div class="text-sm" style="color:var(--muted)">新增 / 删除管理员账号，修改管理员密码。</div>
+      </div>
+      <div class="card home-card p-6" onclick="showView('feedback')">
+        <div class="text-4xl mb-3">📮</div>
+        <div class="font-bold text-lg mb-1">用户反馈</div>
+        <div class="text-sm" style="color:var(--muted)">查看 / 处理主页「反馈」入口收到的意见。<span id="fbHomePending" class="font-bold" style="color:var(--warn)">-</span> 条待处理</div>
+      </div>
+      <div class="card home-card p-6" onclick="showView('config')">
+        <div class="text-4xl mb-3">📢</div>
+        <div class="font-bold text-lg mb-1">公告弹窗</div>
+        <div class="text-sm" style="color:var(--muted)">配置用户进入页面时自动弹出的公告：开关与内容，支持预览。<span id="ancHomeState" class="font-bold" style="color:var(--muted)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 番剧管理 ========== -->
+  <div id="view-anime" class="hidden">
+    <!-- 工具栏 -->
+    <div class="flex flex-col sm:flex-row gap-3 sm:items-center justify-between mb-5">
+      <div class="flex items-center gap-3">
+        <div class="relative w-full sm:w-72">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color:var(--muted)"></i>
+          <input id="searchInput" class="inp pl-9" placeholder="搜索标题 / id / 标签…" oninput="renderList()">
+        </div>
+        <span id="countText" class="text-sm whitespace-nowrap" style="color:var(--muted)">共 0 部</span>
+      </div>
+      <button class="btn btn-primary justify-center" onclick="openEditor(null)">
+        <i class="fa-solid fa-plus"></i> 新增番剧
+      </button>
+    </div>
+
+    <!-- 筛选工具栏（2026-09-12 新增：年份 / 季度 / 来源 / 类型，与上方搜索框为叠加关系） -->
+    <div class="card p-4 mb-5">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm whitespace-nowrap" style="color:var(--muted)"><i class="fa-solid fa-sliders mr-1"></i>筛选</span>
+        <select id="fltYear" class="inp" style="max-width:120px" onchange="renderList()"></select>
+        <select id="fltQuarter" class="inp" style="max-width:170px" onchange="renderList()"></select>
+        <select id="fltSource" class="inp" style="max-width:130px" onchange="renderList()"></select>
+        <select id="fltType" class="inp" style="max-width:130px" onchange="renderList()"></select>
+        <button id="fltReset" class="btn btn-ghost btn-sm hidden" onclick="resetAnimeFilters()"><i class="fa-solid fa-rotate-left"></i> 重置筛选</button>
+      </div>
+    </div>
+
+    <!-- 提示条 -->
+    <div class="card px-4 py-3 mb-5 text-sm flex gap-3 items-start" style="color:var(--muted)">
+      <i class="fa-solid fa-circle-info mt-0.5"></i>
+      <div>此处修改会直接写入云端数据库，评分库（index.html）与我的追番（profile.html）刷新后即可看到。<b>封面建议</b>：填入任意在线图片链接；或将图片放入项目 covers/ 目录并重新部署静态站点后，填入 <code>covers/xxx.jpg</code> 的完整地址。</div>
+    </div>
+
+    <!-- 番剧列表 -->
+    <div id="listWrap" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+  <!-- ========== 用户管理 ========== -->
+  <div id="view-users" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">用户管理</div>
+        <div class="text-sm" style="color:var(--muted)">已注册用户 / 游客统计，支持重置注册用户密码</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="renderUsers()"><i class="fa-solid fa-rotate"></i> 刷新</button>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-user-check mr-1"></i>已注册用户</div>
+        <div class="stat-num" id="statRegistered" style="color:var(--ok)">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-user mr-1"></i>游客用户（有数据）</div>
+        <div class="stat-num" id="statGuest" style="color:var(--warn)">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-users mr-1"></i>用户总数</div>
+        <div class="stat-num" id="statTotal">-</div>
+      </div>
+    </div>
+
+    <div class="card p-2 text-xs mb-4 flex gap-2 items-center" style="color:var(--muted)">
+      <i class="fa-solid fa-circle-info"></i>
+      <div>已注册用户 = 绑定账号的用户；游客用户 = 仅以游客身份使用且留有追番数据的用户（按数据记录去重估算）。</div>
+    </div>
+
+    <!-- 已注册用户列表 -->
+    <div class="card overflow-hidden">
+      <div class="px-5 py-4 border-b flex items-center justify-between" style="border-color:var(--border)">
+        <div class="font-bold">已注册用户</div>
+        <span id="usersCount" class="text-xs" style="color:var(--muted)">共 0 人</span>
+      </div>
+      <div id="usersWrap" class="p-5">
+        <div class="text-sm py-6 text-center" style="color:var(--muted)">加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 管理员账号管理 ========== -->
+  <div id="view-admins" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">管理员账号管理</div>
+        <div class="text-sm" style="color:var(--muted)">管理后台登录账号（超级管理员可新增 / 删除 / 改密）</div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="renderAdmins()"><i class="fa-solid fa-rotate"></i> 刷新</button>
+        <button id="btnAddAdmin" class="btn btn-primary btn-sm" onclick="openAddAdmin()"><i class="fa-solid fa-plus"></i> 新增管理员</button>
+      </div>
+    </div>
+    <div id="adminsWrap" class="space-y-3">
+      <div class="text-sm py-6 text-center" style="color:var(--muted)">加载中…</div>
+    </div>
+  </div>
+
+  <!-- ========== 评分与评论（评论墙管理 + 统计可视化） ========== -->
+  <div id="view-reviews" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">评分与评论</div>
+        <div class="text-sm" style="color:var(--muted)">各番剧用户评分 / 评论管理（公开墙 anime_reviews）与统计可视化</div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="revBackfill()"><i class="fa-solid fa-database"></i> 历史评分回填</button>
+        <button class="btn btn-ghost btn-sm" onclick="renderReviews(true)"><i class="fa-solid fa-rotate"></i> 刷新</button>
+      </div>
+    </div>
+
+    <!-- 概览统计 -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-comment mr-1"></i>评论行总数</div>
+        <div class="stat-num" id="revTotal">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-eye mr-1"></i>正常展示</div>
+        <div class="stat-num" id="revNormal" style="color:var(--ok)">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-eye-slash mr-1"></i>已隐藏</div>
+        <div class="stat-num" id="revHidden" style="color:var(--warn)">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-tv mr-1"></i>有评论的番剧</div>
+        <div class="stat-num" id="revAnimeN">-</div>
+      </div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+      <div class="card p-5">
+        <div class="font-bold mb-1">评分分布</div>
+        <div class="text-xs mb-3" style="color:var(--muted)">横轴分数（0–10，0.5 步进）/ 纵轴评分条数（含仅计分、未附短评的纯评分）</div>
+        <div class="h-56 relative"><canvas id="revHistChart"></canvas></div>
+      </div>
+      <div class="card p-5">
+        <div class="font-bold mb-1">近 30 天评分 / 评论提交趋势</div>
+        <div class="text-xs mb-3" style="color:var(--muted)">按天统计新增的评分/评论</div>
+        <div class="h-56 relative"><canvas id="revTrendChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- 番剧卡片选择（点击卡片展开该番剧评分/评论详情） -->
+    <div class="card p-5">
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div>
+          <div class="font-bold">番剧选择 <span id="revAnimeCount" class="text-xs font-normal ml-2" style="color:var(--muted)"></span></div>
+          <div class="text-xs mt-1" style="color:var(--muted)">点击卡片查看该番剧「开播 · 单集 · 完结」评分的人数 / 均值与用户评论；再次点击收起</div>
+        </div>
+        <input id="revCardFilter" class="inp" style="max-width:240px" placeholder="筛选番剧名称 / ID…" oninput="revCardSearch()">
+      </div>
+      <div id="revAnimeWrap" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div class="col-span-full text-sm py-6 text-center" style="color:var(--muted)">加载中…</div>
+      </div>
+    </div>
+
+    <!-- 番剧详情（点击卡片后展开） -->
+    <div id="revDetail" class="hidden mt-5"></div>
+  </div>
+
+  <!-- ========== 公告弹窗（新增功能 · 2026-09-12） ========== -->
+  <div id="view-config" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">公告弹窗</div>
+        <div class="text-sm" style="color:var(--muted)">评分库 / 联合评分室 / 我的追番 三个页面进入时自动弹出（site_config 集合 · 客户端只读）</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadConfig()"><i class="fa-solid fa-rotate"></i> 刷新</button>
+    </div>
+
+    <!-- 开关 -->
+    <div class="card p-5 mb-5">
+      <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <div class="font-bold">启用公告弹窗</div>
+          <div class="text-xs mt-1" style="color:var(--muted)">关闭后所有前台页面不再弹出公告（已填写的内容会保留，随时可再开启）</div>
+        </div>
+        <label class="switch" title="启用 / 停用公告弹窗">
+          <input type="checkbox" id="ancEnabled">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 内容编辑 -->
+    <div class="card p-5">
+      <label class="lbl" for="ancContent">公告内容（纯文本，最多 2000 字，换行会原样保留）</label>
+      <textarea id="ancContent" class="inp" rows="10" maxlength="2000" style="resize:vertical;line-height:1.8" oninput="updateAncCount()" placeholder="例：本站新增「多人联合评分室」，可邀请好友一起给番剧打分，欢迎体验～"></textarea>
+      <div class="flex items-center justify-between gap-3 mt-3 flex-wrap">
+        <span id="ancCount" class="text-xs" style="color:var(--muted)">0 / 2000</span>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost" onclick="previewAnnouncement()"><i class="fa-solid fa-eye"></i> 预览效果</button>
+          <button class="btn btn-primary" id="ancSaveBtn" onclick="saveConfig()"><i class="fa-solid fa-floppy-disk"></i> 保存配置</button>
+        </div>
+      </div>
+      <div id="ancMeta" class="text-xs mt-3" style="color:var(--muted)"></div>
+      <div class="anc-hint mt-4">
+        <b>展示规则</b>：用户每次进入页面都会看到公告；点右上角 <b>×</b> 只关闭本次，下次进入仍会弹出；勾选底部「<b>不再弹出</b>」后，该用户本机不再显示本公告。<br>
+        <b>内容更新</b>：修改并保存公告内容后，此前勾选过「不再弹出」的用户会重新看到新公告（内容未变则保持静默），避免公告更新后无人可见。
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 用户反馈 ========== -->
+  <div id="view-feedback" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">用户反馈</div>
+        <div class="text-sm" style="color:var(--muted)">主页右下角「反馈」入口提交（仅 D 账号 · feedback 集合 read=false/write=false，客户端不可直接读写）</div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="loadFeedback(true)"><i class="fa-solid fa-rotate"></i> 刷新</button>
+      </div>
+    </div>
+
+    <!-- 概览统计 -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-inbox mr-1"></i>反馈总数</div>
+        <div class="stat-num" id="fbTotal">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-clock mr-1"></i>待处理</div>
+        <div class="stat-num" id="fbPending" style="color:var(--warn)">-</div>
+      </div>
+      <div class="card p-5 text-center">
+        <div class="text-sm mb-1" style="color:var(--muted)"><i class="fa-solid fa-circle-check mr-1"></i>已处理</div>
+        <div class="stat-num" id="fbDone" style="color:var(--ok)">-</div>
+      </div>
+      <div class="card p-5">
+        <div class="text-sm mb-1" style="color:var(--muted)">类型分布</div>
+        <div class="text-xs grid grid-cols-2 gap-x-2 gap-y-1 mt-1" style="color:#4a3b2f">
+          <span>🐛 问题 <b id="fbCBug">-</b></span>
+          <span>💡 建议 <b id="fbCSug">-</b></span>
+          <span>✏️ 勘误 <b id="fbCContent">-</b></span>
+          <span>🗂️ 其他 <b id="fbCOther">-</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 筛选工具栏 -->
+    <div class="card p-4 mb-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <select id="fbFStatus" class="inp" style="max-width:140px" onchange="loadFeedback(true)">
+          <option value="">全部状态</option>
+          <option value="new">待处理</option>
+          <option value="done">已处理</option>
+        </select>
+        <select id="fbFType" class="inp" style="max-width:150px" onchange="loadFeedback(true)">
+          <option value="">全部类型</option>
+          <option value="bug">🐛 问题反馈</option>
+          <option value="suggestion">💡 功能建议</option>
+          <option value="content">✏️ 内容勘误</option>
+          <option value="other">🗂️ 其他</option>
+        </select>
+        <input id="fbFKw" class="inp" style="max-width:260px" placeholder="搜索 昵称 / uid / 内容 / 番剧 / 来源…" onkeydown="if(event.key==='Enter')loadFeedback(true)">
+        <button class="btn btn-ghost btn-sm" onclick="loadFeedback(true)"><i class="fa-solid fa-magnifying-glass"></i> 搜索</button>
+      </div>
+    </div>
+
+    <!-- 反馈列表 -->
+    <div id="fbFList">
+      <div class="text-sm py-6 text-center" style="color:var(--muted)">加载中…</div>
+    </div>
+    <div id="fbFPager" class="mt-4"></div>
+  </div>
+
+</main>
+
+<!-- 编辑番剧弹窗 -->
+<div id="editorModal" class="modal-mask" onclick="if(event.target===this)closeEditor()">
+  <div class="modal">
+    <div class="sticky top-0 px-6 py-4 flex items-center justify-between border-b z-10" style="background:var(--card);border-color:var(--border)">
+      <div class="font-bold text-lg" id="editorTitle">编辑番剧</div>
+      <button class="w-8 h-8 rounded-lg hover:bg-[var(--primary-soft)]" onclick="closeEditor()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-6 space-y-5">
+      <!-- 封面 -->
+      <div>
+        <div class="lbl">封面</div>
+        <div class="flex items-start gap-4">
+          <div class="cover-preview" id="coverPreview"><span class="text-3xl">🎬</span></div>
+          <div class="flex-1 space-y-2">
+            <input id="fCover" class="inp" placeholder="封面图片 URL（在线图床或 covers/ 目录地址）" oninput="refreshCover()">
+            <label class="btn btn-ghost cursor-pointer inline-flex" style="font-size:13px">
+              <i class="fa-solid fa-cloud-arrow-up"></i> 上传图片获取链接
+              <input id="coverFile" type="file" accept="image/*" class="hidden" onchange="uploadCover(this)">
+            </label>
+            <div class="text-xs" style="color:var(--muted)">上传到云存储得到的链接为临时链接（约 2 小时有效），长期使用请用图床或部署到 covers/ 目录。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 基础信息 -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="col-span-1">
+          <div class="lbl">ID（唯一标识，建议 a001 格式）</div>
+          <input id="fId" class="inp" placeholder="a001">
+        </div>
+        <div class="col-span-1">
+          <div class="lbl">标题 *</div>
+          <input id="fTitle" class="inp" placeholder="番剧名称">
+        </div>
+        <div>
+          <div class="lbl">来源</div>
+          <select id="fSource" class="inp">
+            <option value="漫画改">漫画改</option>
+            <option value="小说改">小说改</option>
+            <option value="游戏改">游戏改</option>
+            <option value="原创">原创</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div>
+          <div class="lbl">类型</div>
+          <select id="fType" class="inp">
+            <option value="tv">TV动画</option>
+            <option value="movie">剧场版</option>
+            <option value="ova">OVA</option>
+          </select>
+        </div>
+        <div>
+          <div class="lbl">季度</div>
+          <select id="fQuarter" class="inp">
+            <option value="1">1月（冬）</option>
+            <option value="2">4月（春）</option>
+            <option value="3">7月（夏）</option>
+            <option value="4">10月（秋）</option>
+          </select>
+        </div>
+        <div>
+          <div class="lbl">年份</div>
+          <input id="fYear" type="number" class="inp" min="2000" max="2100" placeholder="2026">
+        </div>
+        <div>
+          <div class="lbl">月份</div>
+          <input id="fMonth" type="number" class="inp" min="1" max="12" placeholder="1">
+        </div>
+        <div>
+          <div class="lbl">日期</div>
+          <input id="fDay" type="number" class="inp" min="1" max="31" placeholder="2">
+        </div>
+        <div>
+          <div class="lbl">更新星期</div>
+          <select id="fWeek" class="inp">
+            <option value="1">周一</option>
+            <option value="2">周二</option>
+            <option value="3">周三</option>
+            <option value="4">周四</option>
+            <option value="5">周五</option>
+            <option value="6">周六</option>
+            <option value="7">周日</option>
+          </select>
+        </div>
+        <div>
+          <div class="lbl">总集数</div>
+          <input id="fEpisodes" type="number" class="inp" min="1" max="999" placeholder="12">
+        </div>
+        <div>
+          <div class="lbl">Emoji（无封面时显示）</div>
+          <input id="fEmoji" class="inp" placeholder="🚀">
+        </div>
+        <div>
+          <div class="lbl">标签（逗号分隔）</div>
+          <input id="fTags" class="inp" placeholder="科幻, 冒险">
+        </div>
+        <div>
+          <div class="lbl">渐变起始色（无封面时背景）</div>
+          <div class="flex gap-2">
+            <input id="fGrad1" type="color" class="inp flex-1 h-10 p-1 cursor-pointer">
+            <input id="fGrad2" type="color" class="inp flex-1 h-10 p-1 cursor-pointer">
+          </div>
+        </div>
+        <div class="col-span-2">
+          <div class="lbl">简介</div>
+          <textarea id="fDesc" class="inp" rows="3" placeholder="番剧简介…"></textarea>
+        </div>
+        <div class="col-span-2">
+          <div class="lbl">隐藏关键词（模糊搜索用，逗号或空格分隔，不对外显示）</div>
+          <input id="fKeywords" class="inp" placeholder="如：别名, 声优, 制作公司, 英文名…">
+        </div>
+        <div class="col-span-2">
+          <div class="lbl">各集放送日期调整（停播/休播用，留空则自动按每周一集推算）</div>
+          <textarea id="fEpDates" class="inp" rows="3" placeholder="每行一集：集数=日期，如&#10;2=2026-01-12&#10;5=2026-02-09"></textarea>
+          <div class="text-xs mt-1" style="color:var(--muted)">默认第 1 集为开播日期，之后每周 +7 天自动推算。只需填写与默认不同的集数，日期格式支持 2026-01-12 或 1月12日。</div>
+        </div>
+      </div>
+
+      <!-- 制作阵容（动态岗位：可增删改任意岗位） -->
+      <div>
+        <div class="lbl mb-2 font-semibold" style="color:var(--text)">制作阵容</div>
+        <div id="staffRows" class="space-y-2"></div>
+        <button type="button" class="btn btn-ghost mt-2" onclick="addStaffRow()" style="font-size:13px"><i class="fa-solid fa-plus"></i> 添加岗位</button>
+        <div class="text-xs mt-2" style="color:var(--muted)">每行 = 一个岗位。岗位名可自定义（如「摄影监督」「人设」「作画监督」）；「声优」支持多个人名，用逗号分隔。</div>
+      </div>
+    </div>
+    <div class="sticky bottom-0 px-6 py-4 flex justify-between gap-3 border-t z-10" style="background:var(--card);border-color:var(--border)">
+      <button id="btnDelete" class="btn btn-danger" onclick="deleteAnime()"><i class="fa-solid fa-trash"></i> 删除</button>
+      <div class="flex gap-3">
+        <button class="btn btn-ghost" onclick="closeEditor()">取消</button>
+        <button class="btn btn-primary" onclick="saveAnime()"><i class="fa-solid fa-floppy-disk"></i> 保存修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 删除番剧确认 -->
+<div id="confirmModal" class="modal-mask" onclick="if(event.target===this)hideConfirm()">
+  <div class="modal !max-w-sm">
+    <div class="p-6 text-center">
+      <div class="text-3xl mb-3">🗑️</div>
+      <div class="font-bold mb-2">确认删除该番剧？</div>
+      <div class="text-sm mb-5" style="color:var(--muted)">删除后评分库与追番清单中将不再显示该番剧，此操作无法恢复。</div>
+      <div class="flex justify-center gap-3">
+        <button class="btn btn-ghost" onclick="hideConfirm()">取消</button>
+        <button class="btn btn-danger" onclick="doDelete()">确认删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 重置密码结果弹窗 -->
+<div id="newPwdModal" class="modal-mask" onclick="if(event.target===this)closeNewPwd()">
+  <div class="modal !max-w-sm">
+    <div class="p-6 text-center">
+      <div class="text-4xl mb-3">🔑</div>
+      <div class="font-bold mb-1">密码已重置</div>
+      <div class="text-sm mb-4" style="color:var(--muted)">用户 <b id="npAccount"></b> 的新密码（请复制后私下告知该用户，并提醒其登录后尽快修改）：</div>
+      <div class="flex items-center gap-2 mb-4">
+        <input id="npValue" class="inp text-center font-mono" readonly>
+        <button class="btn btn-primary flex-none" onclick="copyNewPwd()"><i class="fa-solid fa-copy"></i></button>
+      </div>
+      <button class="btn btn-ghost w-full justify-center" onclick="closeNewPwd()">我已复制，关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增 / 修改管理员弹窗 -->
+<div id="adminModal" class="modal-mask" onclick="if(event.target===this)closeAdminModal()">
+  <div class="modal !max-w-sm">
+    <div class="sticky top-0 px-6 py-4 flex items-center justify-between border-b z-10" style="background:var(--card);border-color:var(--border)">
+      <div class="font-bold text-lg" id="adminModalTitle">新增管理员</div>
+      <button class="w-8 h-8 rounded-lg hover:bg-[var(--primary-soft)]" onclick="closeAdminModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div id="adminAccountField">
+        <div class="lbl">账号名</div>
+        <input id="amAccount" class="inp" placeholder="2-20 位，中英文 / 数字 / 符号">
+      </div>
+      <div>
+        <div class="lbl" id="amPwdLabel">初始密码</div>
+        <input id="amPwd" type="text" class="inp" placeholder="至少 8 位">
+      </div>
+      <div class="text-xs" style="color:var(--muted)" id="amTip">新增管理员后，该账号即可登录管理后台（普通管理员不可新增 / 删除管理员）。</div>
+      <button class="btn btn-primary w-full justify-center" id="amSubmitBtn" onclick="submitAdmin()"><i class="fa-solid fa-check"></i> 确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 登录过期弹窗 -->
+<div id="expiredModal" class="modal-mask z-[600]">
+  <div class="modal !max-w-sm">
+    <div class="p-6 text-center">
+      <div class="text-4xl mb-3">⏰</div>
+      <div class="font-bold mb-2">登录已过期</div>
+      <div class="text-sm mb-5" style="color:var(--muted)">管理员凭证已失效，请重新登录。</div>
+      <button class="btn btn-primary w-full justify-center" onclick="backToLogin()"><i class="fa-solid fa-right-to-bracket"></i> 重新登录</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================
+ * 配置
+ * ============================================================ */
+const ENV_ID = "dpcca-wiki-d7g0dl19y23cd30f3";
+
+/* ============================================================
+ * 云开发接入：管理后台通过「账号密码 -> 云函数 admin_login 校验
+ * 并签发自定义登录凭证 -> 管理员身份」登录，之后直接读写数据库。
+ * ============================================================ */
+let __app = null, __auth = null, __db = null;
+function getApp() {
+  if (!__app) __app = cloudbase.init({ env: ENV_ID });
+  return __app;
+}
+function getAuth() {
+  if (!__auth) __auth = getApp().auth({ persistence: "local" });
+  return __auth;
+}
+async function getDB() {
+  if (__db) return __db;
+  __auth = getAuth();
+  if (!__auth.hasLoginState()) await __auth.anonymousAuthProvider().signIn();
+  __db = getApp().database();
+  return __db;
+}
+
+/* ============================================================
+ * 状态
+ * ============================================================ */
+let library = [];      // 云端加载的番剧列表
+let editing = null;    // 当前编辑记录 { _id, data }
+let deleting = null;   // 待删除记录 { _id, data }
+let currentView = "home";
+
+/* ============================================================
+ * 口令 / 登录 / 登出
+ * ============================================================ */
+let __adminCred = null;   // 管理员凭证（仅存内存，不写入 localStorage）
+let __adminRole = "";     // 当前管理员角色：super / admin
+
+/* 统一调用云函数：鉴权失败（AUTH_FAIL）时弹窗退回登录页 */
+async function callAdmin(action, data) {
+  if (!__adminCred) { sessionExpired(); throw new Error("未登录"); }
+  const res = await getApp().callFunction({
+    name: "admin_login",
+    data: { action, username: __adminCred.username, password: __adminCred.password, data: data || {} },
+  });
+  const result = (res && res.result) || {};
+  if (!result.ok && result.code === "AUTH_FAIL") {
+    sessionExpired();
+    throw new Error(result.message || "登录已过期");
+  }
+  return result;
+}
+
+async function doLogin() {
+  const username = document.getElementById("userInput").value.trim();
+  const password = document.getElementById("pwdInput").value;
+  if (!username || !password) {
+    document.getElementById("pwdErr").textContent = "请输入账号和密码";
+    document.getElementById("pwdErr").classList.remove("hidden");
+    return;
+  }
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true; btn.textContent = "登录中…";
+  try {
+    const auth = getAuth();
+    if (!auth.hasLoginState()) await auth.anonymousAuthProvider().signIn();
+    const res = await getApp().callFunction({ name: "admin_login", data: { action: "login", username, password } });
+    const result = res.result || {};
+    if (!result.ok) throw new Error(result.message || "账号或密码错误");
+    __adminCred = { username, password };
+    __adminRole = result.role || "admin";
+    localStorage.setItem("dpcca_admin_ok", "1");
+    document.getElementById("loginLayer").classList.add("hidden");
+    document.getElementById("topNav").classList.remove("hidden");
+    document.getElementById("homeName").textContent = result.accountName || username;
+    document.getElementById("navRole").textContent = `${result.accountName || username} · ${result.role === "super" ? "超级管理员" : "管理员"}`;
+    showView("home");
+    loadConfig(true); // 静默预取公告配置，用于首页卡片显示当前启用状态
+  } catch (e) {
+    console.error(e);
+    document.getElementById("pwdErr").textContent = e.message || "登录失败，请重试";
+    document.getElementById("pwdErr").classList.remove("hidden");
+  } finally {
+    btn.disabled = false; btn.textContent = "进入后台";
+  }
+}
+
+function logout() {
+  localStorage.removeItem("dpcca_admin_ok");
+  __adminCred = null;
+  __adminRole = "";
+  const auth = getAuth();
+  if (auth.logout) auth.logout().catch(() => {});
+  location.reload();
+}
+
+/* 登录过期：清凭证并弹窗 */
+function sessionExpired() {
+  __adminCred = null;
+  __adminRole = "";
+  localStorage.removeItem("dpcca_admin_ok");
+  document.getElementById("expiredModal").classList.add("show");
+}
+function backToLogin() {
+  document.getElementById("expiredModal").classList.remove("show");
+  location.reload();
+}
+
+/* ============================================================
+ * 用户反馈：加载与渲染（feedback）
+ * ============================================================ */
+const FB_TYPES = { bug: ["🐛", "问题反馈"], suggestion: ["💡", "功能建议"], content: ["✏️", "内容勘误"], other: ["🗂️", "其他"] };
+let fbPage = 1;
+const FB_PAGE_SIZE = 20;
+
+function fbTime(t) {
+  if (!t) return "";
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return String(t);
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+function fbStatusPill(status) {
+  return status === "done"
+    ? '<span class="text-[11px] px-2 py-0.5 rounded-full font-bold" style="background:rgba(72,159,90,.13);color:#489f5a">已处理</span>'
+    : '<span class="text-[11px] px-2 py-0.5 rounded-full font-bold" style="background:rgba(214,138,64,.15);color:#c07a2d">待处理</span>';
+}
+
+async function loadFeedback(resetPage) {
+  try {
+    if (resetPage) fbPage = 1;
+    const kwEl = document.getElementById("fbFKw");
+    const st = await callAdmin("feedbackStats");
+    if (st && st.ok) {
+      const s = st.byType || {};
+      document.getElementById("fbTotal").textContent = st.total;
+      document.getElementById("fbPending").textContent = st.pending;
+      document.getElementById("fbDone").textContent = st.done;
+      document.getElementById("fbCBug").textContent = s.bug || 0;
+      document.getElementById("fbCSug").textContent = s.suggestion || 0;
+      document.getElementById("fbCContent").textContent = s.content || 0;
+      document.getElementById("fbCOther").textContent = s.other || 0;
+      const h = document.getElementById("fbHomePending");
+      if (h) h.textContent = st.pending;
+    }
+    const list = await callAdmin("feedbackList", {
+      status: document.getElementById("fbFStatus").value || "",
+      type: document.getElementById("fbFType").value || "",
+      keyword: kwEl ? kwEl.value.trim() : "",
+      page: fbPage,
+      pageSize: FB_PAGE_SIZE
+    });
+    if (!list || !list.ok) throw new Error((list && list.message) || "加载失败");
+    renderFeedback(list);
+  } catch (e) {
+    const wrap = document.getElementById("fbFList");
+    if (wrap) wrap.innerHTML = '<div class="text-sm py-6 text-center" style="color:var(--err)">加载失败：' + escAttr((e && e.message) ? e.message : String(e)) + '</div>';
+  }
+}
+
+function renderFeedback(list) {
+  const wrap = document.getElementById("fbFList");
+  const pager = document.getElementById("fbFPager");
+  const rows = (list && list.list) || [];
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="text-sm py-8 text-center" style="color:var(--muted)">暂无反馈记录（可尝试清空筛选条件）</div>';
+    pager.innerHTML = "";
+    return;
+  }
+  const isSuper = __adminRole === "super";
+  const pageSize = list.pageSize || FB_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil((list.total || 0) / pageSize));
+  wrap.innerHTML = rows.map(r => {
+    const tp = FB_TYPES[r.type] || FB_TYPES.other;
+    const refs = (r.refTitle || r.refId)
+      ? `<div class="mt-2 text-xs"><i class="fa-solid fa-paperclip mr-1"></i>关联番剧：${escAttr(r.refTitle || "")}${r.refId ? "（" + escAttr(r.refId) + "）" : ""}</div>`
+      : "";
+    return `<div class="card p-4 mb-3">
+      <div class="flex items-center flex-wrap gap-2">
+        <span class="text-[11px] px-2 py-0.5 rounded-full font-bold" style="background:rgba(164,115,47,.14);color:#a8732f">${tp[0]} ${tp[1]}</span>
+        ${fbStatusPill(r.status)}
+        <span class="text-[11px] ml-auto" style="color:var(--muted)">${fbTime(r.createdAt || r.updatedAt)}</span>
+      </div>
+      <div class="mt-2 text-sm whitespace-pre-wrap break-words" style="color:#4a3b2f">${escAttr(r.content || "")}</div>
+      ${refs}
+      <div class="mt-2 text-xs flex flex-wrap gap-x-4 gap-y-1" style="color:var(--muted)">
+        <span>${escAttr(r.nickname || "无名")}</span>
+        <span>${escAttr(r.uid || "")}</span>
+        ${r.page ? `<span>来自 ${escAttr(r.page)}</span>` : ""}
+      </div>
+      <div class="flex gap-2 mt-3">
+        ${r.status !== "done"
+          ? `<button class="btn btn-primary btn-sm" onclick="fbSet('${r._id}','done')"><i class="fa-solid fa-check"></i> 标记已处理</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="fbSet('${r._id}','new')"><i class="fa-solid fa-rotate-left"></i> 重新打开</button>`}
+        ${isSuper ? `<button class="btn btn-danger btn-sm" onclick="fbDel('${r._id}')"><i class="fa-solid fa-trash"></i> 删除</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  pager.innerHTML = `<div class="flex items-center justify-between gap-2 text-sm flex-wrap">
+    <span style="color:var(--muted)">共 ${list.total} 条 · 第 ${list.page} / ${pageCount} 页</span>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-sm" onclick="fbGo(${list.page - 1})" ${list.page <= 1 ? "disabled" : ""}>上一页</button>
+      <button class="btn btn-ghost btn-sm" onclick="fbGo(${list.page + 1})" ${list.page >= pageCount ? "disabled" : ""}>下一页</button>
+    </div>
+  </div>`;
+}
+
+function fbGo(p) {
+  if (p < 1) return;
+  fbPage = p;
+  loadFeedback(false);
+}
+
+async function fbSet(id, status) {
+  try {
+    const r = await callAdmin("feedbackMark", { _id: id, status });
+    if (r && r.ok) { toast(status === "done" ? "已标记为已处理" : "已重新打开"); loadFeedback(false); }
+    else toast((r && r.message) || "操作失败", true);
+  } catch (e) { toast("操作失败：" + ((e && e.message) ? e.message : String(e)), true); }
+}
+
+async function fbDel(id) {
+  if (!window.confirm("确定彻底删除这条反馈吗？此操作不可恢复。")) return;
+  try {
+    const r = await callAdmin("feedbackDelete", { _id: id });
+    if (r && r.ok) { toast("已删除该反馈"); loadFeedback(false); }
+    else toast((r && r.message) || "操作失败", true);
+  } catch (e) { toast("操作失败：" + ((e && e.message) ? e.message : String(e)), true); }
+}
+
+/* ============================================================
+ * 公告弹窗配置（site_config · announcement）
+ * ------------------------------------------------------------
+ * 读：configGet      写：configSave（均经云函数 admin_login 鉴权）
+ * 文档结构：{ enabled, content, updatedAt, updatedBy }
+ * ============================================================ */
+const ANC_CONTENT_MAX = 2000;
+
+async function loadConfig(quiet) {
+  try {
+    const r = await callAdmin("configGet");
+    if (!r || !r.ok) throw new Error((r && r.message) || "加载失败");
+    applyConfig(r.config || {});
+  } catch (e) {
+    if (!quiet) toast("公告配置加载失败：" + ((e && e.message) ? e.message : String(e)), true);
+  }
+}
+
+function applyConfig(c) {
+  const en = document.getElementById("ancEnabled");
+  const ct = document.getElementById("ancContent");
+  if (en) en.checked = !!c.enabled;
+  if (ct) ct.value = c.content || "";
+  updateAncCount();
+  const meta = document.getElementById("ancMeta");
+  if (meta) {
+    meta.textContent = c.updatedAt
+      ? "上次保存：" + fbTime(c.updatedAt) + (c.updatedBy ? "（" + c.updatedBy + "）" : "")
+      : "云端尚无公告记录，填写内容后点「保存配置」即可创建";
+  }
+  const home = document.getElementById("ancHomeState");
+  if (home) home.textContent = c.enabled ? "（当前：已启用）" : "（当前：未启用）";
+}
+
+function updateAncCount() {
+  const ct = document.getElementById("ancContent");
+  const el = document.getElementById("ancCount");
+  if (!ct || !el) return;
+  const n = ct.value.length;
+  el.textContent = n + " / " + ANC_CONTENT_MAX;
+  el.style.color = n >= ANC_CONTENT_MAX ? "var(--err)" : "";
+}
+
+async function saveConfig() {
+  const en = document.getElementById("ancEnabled");
+  const ct = document.getElementById("ancContent");
+  const enabled = !!(en && en.checked);
+  const content = (ct ? ct.value : "").trim();
+  if (enabled && !content) { toast("启用公告弹窗时，请先填写公告内容", true); return; }
+  const btn = document.getElementById("ancSaveBtn");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await callAdmin("configSave", { enabled, content });
+    if (!r || !r.ok) throw new Error((r && r.message) || "保存失败");
+    applyConfig(r.config || { enabled, content });
+    toast(enabled ? "公告配置已保存，前台刷新后即会弹出" : "公告配置已保存（当前为关闭状态）");
+  } catch (e) {
+    toast("保存失败：" + ((e && e.message) ? e.message : String(e)), true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* 预览：复用前台 announcement.js，保证与线上弹窗完全一致 */
+function previewAnnouncement() {
+  const ct = document.getElementById("ancContent");
+  const content = (ct ? ct.value : "").trim();
+  if (!content) { toast("请先填写公告内容", true); return; }
+  if (window.DpccaAnnouncement && typeof window.DpccaAnnouncement.preview === "function") {
+    window.DpccaAnnouncement.preview(content);
+  } else {
+    toast("预览组件未加载，请刷新页面重试", true);
+  }
+}
+
+/* ============================================================
+ * 视图切换
+ * ============================================================ */
+function showView(view) {
+  currentView = view;
+  ["home", "anime", "users", "reviews", "feedback", "config", "admins"].forEach(v => {
+    const el = document.getElementById("view-" + v);
+    if (el) el.classList.toggle("hidden", v !== view);
+    const nav = document.getElementById("navBtn-" + v);
+    if (nav) nav.classList.toggle("active", v === view);
+  });
+  if (view === "anime") init();
+  if (view === "users") renderUsers();
+  if (view === "reviews") renderReviews();
+  if (view === "feedback") loadFeedback(true);
+  if (view === "config") loadConfig();
+  if (view === "admins") renderAdmins();
+  window.scrollTo({ top: 0 });
+}
+
+/* ============================================================
+ * 番剧管理：加载与渲染
+ * ============================================================ */
+async function init() {
+  try {
+    const db = await getDB();
+    // 分页拉取全量（Web SDK 单次 get() 最多返回 100 条，limit 最大 1000）
+    const PAGE = 1000;
+    let skip = 0;
+    let rows = [];
+    while (true) {
+      const res = await db.collection("anime_library").orderBy("id", "asc").skip(skip).limit(PAGE).get();
+      const list = res.data || [];
+      rows = rows.concat(list);
+      if (list.length < PAGE) break;
+      skip += PAGE;
+    }
+    // 兼容历史数据：早期保存可能把番剧包在 data 字段里，统一解包为扁平结构（保留 _id 供编辑定位）
+    library = rows.map(r => {
+      if (r && typeof r === "object" && r.data && typeof r.data === "object" && !r.title && r.data.title) {
+        return Object.assign({ _id: r._id }, r.data);
+      }
+      return r;
+    });
+  } catch (e) {
+    console.error(e);
+    toast("加载云端数据失败：" + (e.message || e), true);
+  }
+  fillAnimeFilters();   // 筛选项（年份等）依赖库内数据，每次加载后重建并保留已选值
+  renderList();
+}
+
+/* 类型（v2.0）：TV动画 / 剧场版 / OVA；存量数据无 type 字段，默认 TV 动画 */
+const TYPE_LABELS = { tv: "TV动画", movie: "剧场版", ova: "OVA" };
+const typeLabelOf = (a) => TYPE_LABELS[(a && a.type) || "tv"] || "TV动画";
+
+/* 筛选维度取值口径与编辑表单（fSource/fType/fQuarter）及前台 index.html 保持一致 */
+const QUARTER_LABELS = { 1: "1月（冬）", 2: "4月（春）", 3: "7月（夏）", 4: "10月（秋）" };
+const SOURCE_OPTIONS = ["漫画改", "小说改", "游戏改", "原创", "其他"];
+const ANIME_FILTER_IDS = ["fltYear", "fltQuarter", "fltSource", "fltType"];
+
+/* 填充筛选项：年份取库内实际出现过的值（倒序），季度 / 来源 / 类型为固定口径；
+   重建后若原选项仍存在则保留，避免保存 / 删除后筛选条件被清掉 */
+function fillAnimeFilters() {
+  const keep = {};
+  ANIME_FILTER_IDS.forEach(id => { const el = document.getElementById(id); keep[id] = el ? el.value : ""; });
+  const setOpts = (id, opts) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = "";
+    opts.forEach(o => {
+      const op = document.createElement("option");
+      op.value = o.v;
+      op.textContent = o.t;
+      el.appendChild(op);
+    });
+    el.value = opts.some(o => o.v === keep[id]) ? keep[id] : "";
+  };
+  const years = [...new Set(library.map(a => Number(a.year)).filter(Boolean))].sort((a, b) => b - a);
+  setOpts("fltYear", [{ v: "", t: "全部年份" }].concat(years.map(y => ({ v: String(y), t: y + " 年" }))));
+  setOpts("fltQuarter", [{ v: "", t: "全部季度" }].concat([1, 2, 3, 4].map(q => ({ v: String(q), t: "Q" + q + " · " + QUARTER_LABELS[q] }))));
+  setOpts("fltSource", [{ v: "", t: "全部来源" }].concat(SOURCE_OPTIONS.map(s => ({ v: s, t: s }))));
+  setOpts("fltType", [{ v: "", t: "全部类型" }].concat(Object.keys(TYPE_LABELS).map(k => ({ v: k, t: TYPE_LABELS[k] }))));
+}
+
+/* 当前是否有生效的搜索 / 筛选条件（用于计数文案与「重置筛选」显隐） */
+function animeFilterActive() {
+  if ((document.getElementById("searchInput").value || "").trim()) return true;
+  return ANIME_FILTER_IDS.some(id => { const el = document.getElementById(id); return !!el && el.value !== ""; });
+}
+
+function resetAnimeFilters() {
+  ANIME_FILTER_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  document.getElementById("searchInput").value = "";
+  renderList();
+}
+
+function filteredList() {
+  const q = (document.getElementById("searchInput").value || "").trim().toLowerCase();
+  const fy = document.getElementById("fltYear").value;
+  const fq = document.getElementById("fltQuarter").value;
+  const fs = document.getElementById("fltSource").value;
+  const ft = document.getElementById("fltType").value;
+  return library.filter(a => {
+    // 下拉留空 = 不限；存量数据无 quarter / type 字段时按编辑表单默认值（Q1 / TV 动画）归类
+    if (fy && String(Number(a.year)) !== fy) return false;
+    if (fq && String(Number(a.quarter != null ? a.quarter : 1)) !== fq) return false;
+    if (fs && (a.source || "") !== fs) return false;
+    if (ft && (a.type || "tv") !== ft) return false;
+    if (!q) return true;
+    const tags = (a.tags || []).join(" ").toLowerCase();
+    return (a.title || "").toLowerCase().includes(q) || (a.id || "").toLowerCase().includes(q) || tags.includes(q) || typeLabelOf(a).toLowerCase().includes(q);
+  });
+}
+
+function renderList() {
+  const rows = filteredList();
+  const active = animeFilterActive();
+  document.getElementById("countText").textContent = active
+    ? `筛选出 ${rows.length} / 共 ${library.length} 部`
+    : `共 ${library.length} 部`;
+  const resetBtn = document.getElementById("fltReset");
+  if (resetBtn) resetBtn.classList.toggle("hidden", !active);
+  const wrap = document.getElementById("listWrap");
+  if (!rows.length) {
+    wrap.innerHTML = active
+      ? `<div class="col-span-full card p-10 text-center text-sm" style="color:var(--muted)">没有符合筛选条件的番剧，可调整条件或点击「重置筛选」。</div>`
+      : `<div class="col-span-full card p-10 text-center text-sm" style="color:var(--muted)">暂无数据，点击右上角「新增番剧」开始添加。</div>`;
+    return;
+  }
+  wrap.innerHTML = rows.map(a => {
+    const date = `${a.year || "----"}.${String(a.month || 1).padStart(2, "0")}.${String(a.day || 1).padStart(2, "0")}`;
+    const g = (a.gradient && a.gradient.length >= 2) ? a.gradient : ["#14245e", "#3a2b5f"];
+    const tags = (a.tags || []).slice(0, 3).map(t => {
+      const cls = t.includes("科幻") || t.includes("冒险") ? "tag-sci" : t.includes("国风") ? "tag-ep" : "tag-other";
+      return `<span class="tag ${cls}">${t}</span>`;
+    }).join(" ");
+    return `<div class="card p-4 flex gap-4 cursor-pointer hover:-translate-y-0.5 transition-transform" onclick="openEditor('${a._id}')">
+      <div class="cover-preview">
+        ${a.cover
+          ? `<img src="${a.cover}" alt="${a.title || ""}" loading="lazy" onerror="this.outerHTML='<span style=&quot;font-size:28px&quot;>${a.emoji || "🎬"}</span>'">`
+          : `<span style="font-size:28px">${a.emoji || "🎬"}</span>`}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold truncate">${a.title || "(未命名)"}</span>
+          <span class="text-xs" style="color:var(--muted)">${a.id || ""}</span>
+        </div>
+        <div class="text-xs mt-1" style="color:var(--muted)">
+          <i class="fa-regular fa-calendar mr-1"></i>${date} · ${a.episodes || "-"} 集 · ${a.source || "未知"} · ${typeLabelOf(a)}
+        </div>
+        <div class="mt-2">${tags}</div>
+      </div>
+      <div class="flex flex-col justify-between items-end">
+        <span class="text-xs px-2 py-1 rounded-lg" style="background:${g[0]}22;color:${g[0]}">${a.emoji || "🎬"}</span>
+        <i class="fa-solid fa-pen-to-square text-sm" style="color:var(--muted)"></i>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ============================================================
+ * 编辑弹窗
+ * ============================================================ */
+function openEditor(docId) {
+  const rec = docId ? library.find(x => x._id === docId) : null;
+  editing = rec ? { _id: rec._id, data: rec } : null;
+  document.getElementById("editorTitle").textContent = rec ? `编辑 · ${rec.title || rec.id}` : "新增番剧";
+  document.getElementById("btnDelete").style.visibility = rec ? "visible" : "hidden";
+  const d = rec || {};
+  const staff = d.staff || {};
+  v("fId", d.id || suggestId());
+  v("fTitle", d.title || "");
+  v("fSource", d.source || "漫画改");
+  v("fType", d.type || "tv");   // 新增数据默认 TV 动画
+  v("fQuarter", d.quarter != null ? d.quarter : 1);
+  v("fYear", d.year || 2026);
+  v("fMonth", d.month || 1);
+  v("fDay", d.day || 1);
+  v("fWeek", d.week || 1);
+  v("fEpisodes", d.episodes || 12);
+  v("fEmoji", d.emoji || "🎬");
+  v("fTags", (d.tags || []).join(", "));
+  v("fGrad1", (d.gradient && d.gradient[0]) || "#14245e");
+  v("fGrad2", (d.gradient && d.gradient[1]) || "#3a2b5f");
+  v("fCover", d.cover || "");
+  v("fDesc", d.desc || "");
+  v("fKeywords", d.keywords || "");
+  v("fEpDates", epDatesToText(d.epDates));
+  renderStaffRows(staff);
+  refreshCover();
+  document.getElementById("editorModal").classList.add("show");
+}
+
+function closeEditor() {
+  document.getElementById("editorModal").classList.remove("show");
+  editing = null;
+}
+
+function refreshCover() {
+  const url = document.getElementById("fCover").value.trim();
+  const emoji = document.getElementById("fEmoji").value.trim() || "🎬";
+  const g1 = document.getElementById("fGrad1").value || "#14245e";
+  const g2 = document.getElementById("fGrad2").value || "#3a2b5f";
+  const box = document.getElementById("coverPreview");
+  if (url) {
+    box.innerHTML = `<img src="${url}" onerror="this.outerHTML='<span style=&quot;font-size:28px&quot;>${emoji}</span>'">`;
+  } else {
+    box.style.background = `linear-gradient(135deg, ${g1}, ${g2})`;
+    box.innerHTML = `<span style="font-size:32px">${emoji}</span>`;
+  }
+}
+
+/* ============================================================
+ * 封面上传（云存储 → 临时链接）
+ * ============================================================ */
+async function uploadCover(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast("图片不能超过 5MB", true); input.value = ""; return; }
+  try {
+    toast("正在上传…");
+    await getDB();
+    const res = await __app.uploadFile({
+      cloudPath: `covers/${Date.now()}_${file.name}`,
+      filePath: file
+    });
+    const urlRes = await __app.getTempFileURL({ fileList: [res.fileID] });
+    const url = urlRes.fileList && urlRes.fileList[0] && urlRes.fileList[0].tempFileURL;
+    if (url) {
+      document.getElementById("fCover").value = url;
+      refreshCover();
+      toast("上传成功，已填入临时链接");
+    } else {
+      toast("上传失败：未获取到链接", true);
+    }
+  } catch (e) {
+    console.error(e);
+    toast("上传失败：" + (e.message || e), true);
+  }
+  input.value = "";
+}
+
+/* ============================================================
+ * 保存 / 删除
+ * ============================================================ */
+function suggestId() {
+  let max = 0;
+  library.forEach(a => {
+    const m = /^a(\d+)$/.exec(a.id || "");
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return "a" + String(max + 1).padStart(3, "0");
+}
+
+function collect() {
+  return {
+    id: document.getElementById("fId").value.trim(),
+    title: document.getElementById("fTitle").value.trim(),
+    source: document.getElementById("fSource").value,
+    type: document.getElementById("fType").value || "tv",   // v2.0：类型，默认 TV 动画
+    quarter: parseInt(document.getElementById("fQuarter").value, 10) || 1,
+    year: parseInt(document.getElementById("fYear").value, 10) || 2026,
+    month: parseInt(document.getElementById("fMonth").value, 10) || 1,
+    day: parseInt(document.getElementById("fDay").value, 10) || 1,
+    week: parseInt(document.getElementById("fWeek").value, 10) || 1,
+    episodes: parseInt(document.getElementById("fEpisodes").value, 10) || 12,
+    emoji: document.getElementById("fEmoji").value.trim() || "🎬",
+    tags: splitList("fTags"),
+    gradient: [document.getElementById("fGrad1").value, document.getElementById("fGrad2").value],
+    cover: document.getElementById("fCover").value.trim(),
+    desc: document.getElementById("fDesc").value.trim(),
+    keywords: document.getElementById("fKeywords").value.trim(),
+    epDates: collectEpDates(),
+    staff: collectStaff()
+  };
+}
+
+const STAFF_LABELS = { original: "原作", director: "导演", writer: "编剧", music: "音乐", studio: "制作公司", cast: "声优" };
+const STAFF_KEY_LABELS = { "原作": "original", "导演": "director", "编剧": "writer", "音乐": "music", "制作公司": "studio", "声优": "cast" };
+
+function addStaffRow(role, value) {
+  const el = document.getElementById("staffRows");
+  const row = document.createElement("div");
+  row.className = "flex gap-2";
+  row.innerHTML =
+    `<input class="inp flex-1 staff-role" placeholder="岗位（如：摄影监督）" value="${escAttr(role || "")}">` +
+    `<input class="inp flex-[2] staff-value" placeholder="人员 / 公司（声优请用逗号分隔）" value="${escAttr(value || "")}">` +
+    `<button type="button" class="btn btn-ghost flex-none" onclick="this.parentElement.remove()"><i class="fa-solid fa-xmark"></i></button>`;
+  el.appendChild(row);
+}
+function escAttr(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* 把 staff 对象回填为行（旧英文 key 转中文名；声优数组转逗号文本） */
+function renderStaffRows(staff) {
+  const el = document.getElementById("staffRows");
+  el.innerHTML = "";
+  const st = staff || {};
+  const keys = Object.keys(st).filter(k => st[k]);
+  if (keys.length) {
+    keys.forEach(k => {
+      const label = STAFF_LABELS[k] || k;
+      let val = st[k];
+      if (Array.isArray(val)) val = val.join(", ");
+      addStaffRow(label, val);
+    });
+  } else {
+    addStaffRow();
+  }
+}
+
+/* 把行收集为 staff 对象：中文岗位名作 key，「声优」存数组，其余存字符串 */
+function collectStaff() {
+  const staff = {};
+  document.querySelectorAll("#staffRows .flex").forEach(row => {
+    const role = row.querySelector(".staff-role").value.trim();
+    const value = row.querySelector(".staff-value").value.trim();
+    if (!role || !value) return;
+    const key = STAFF_KEY_LABELS[role] || role;
+    if (key === "cast") staff[key] = value.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+    else staff[key] = value;
+  });
+  return staff;
+}
+function splitList(id) {
+  return document.getElementById(id).value.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+}
+
+/* ============================================================
+ * 各集放送日期调整（epDates）
+ * 存储格式：{ 集号: "M月D日"（跨年时可带年份） }，仅存与默认不同的集
+ * ============================================================ */
+/* 把日期字符串统一为显示格式：2026-01-12 / 1-12 / 1月12日 → 1月12日 */
+function fmtEpDate(s) {
+  const t = String(s || "").trim();
+  if (!t) return "";
+  let m = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(t);
+  if (m) return `${+m[2]}月${+m[3]}日`;
+  m = /(\d{1,2})[-/.](\d{1,2})/.exec(t);
+  if (m) return `${+m[1]}月${+m[2]}日`;
+  return t;
+}
+/* 从 textarea 收集：每行「集数=日期」，仅保留合法集号 */
+function collectEpDates() {
+  const out = {};
+  const rows = document.getElementById("fEpDates").value.split(/\n/).map(s => s.trim()).filter(Boolean);
+  rows.forEach(row => {
+    const m = /^(\d+)\s*[=:]\s*(.+)$/.exec(row);
+    if (m) {
+      const ep = parseInt(m[1], 10);
+      const d = fmtEpDate(m[2]);
+      if (ep > 0 && d) out[ep] = d;
+    }
+  });
+  return Object.keys(out).length ? out : null;
+}
+/* 回填：对象 → 每行「集号=日期」 */
+function epDatesToText(epDates) {
+  if (!epDates) return "";
+  return Object.entries(epDates).map(([ep, d]) => `${ep}=${d}`).join("\n");
+}
+
+async function saveAnime() {
+  const data = collect();
+  if (!data.id) { toast("请填写 ID", true); return; }
+  if (!data.title) { toast("请填写标题", true); return; }
+  const dup = library.find(x => x.id === data.id && (!editing || x._id !== editing._id));
+  if (dup) { toast(`ID ${data.id} 已存在（《${dup.title}》），请更换`, true); return; }
+  try {
+    const payload = Object.assign({}, data);
+    if (editing) payload._id = editing._id;
+    const res = await callAdmin("save", payload);
+    if (!res.ok) throw new Error(res.message || "保存失败");
+    toast(editing ? "已保存修改" : "已新增番剧");
+    closeEditor();
+    await init();
+  } catch (e) {
+    console.error(e);
+    toast("保存失败：" + (e.message || e), true);
+  }
+}
+
+function deleteAnime() {
+  if (!editing) return;
+  deleting = editing;
+  document.getElementById("confirmModal").classList.add("show");
+}
+function hideConfirm() { document.getElementById("confirmModal").classList.remove("show"); deleting = null; }
+async function doDelete() {
+  if (!deleting) return;
+  try {
+    const res = await callAdmin("delete", { _id: deleting._id });
+    if (!res.ok) throw new Error(res.message || "删除失败");
+    toast(`已删除《${deleting.data.title || deleting.data.id}》`);
+    hideConfirm();
+    closeEditor();
+    await init();
+  } catch (e) {
+    console.error(e);
+    toast("删除失败：" + (e.message || e), true);
+  }
+}
+
+/* ============================================================
+ * 用户管理
+ * ============================================================ */
+function fmtTime(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+async function renderUsers() {
+  const wrap = document.getElementById("usersWrap");
+  try {
+    const r = await callAdmin("userList");
+    if (!r.ok) throw new Error(r.message || "加载失败");
+    document.getElementById("statRegistered").textContent = r.registeredCount || 0;
+    document.getElementById("statGuest").textContent = r.guestCount || 0;
+    document.getElementById("statTotal").textContent = r.totalCount || 0;
+    document.getElementById("usersCount").textContent = `共 ${(r.users || []).length} 人`;
+    const users = r.users || [];
+    if (!users.length) {
+      wrap.innerHTML = `<div class="text-sm py-6 text-center" style="color:var(--muted)">暂无已注册用户。</div>`;
+      return;
+    }
+    wrap.innerHTML = `<div class="overflow-x-auto">
+      <table class="w-full text-sm" style="border-collapse:collapse">
+        <thead>
+          <tr style="color:var(--muted)" class="text-left">
+            <th class="py-2 pr-3 font-medium">账号</th>
+            <th class="py-2 pr-3 font-medium">UID</th>
+            <th class="py-2 pr-3 font-medium">昵称</th>
+            <th class="py-2 pr-3 font-medium">注册时间</th>
+            <th class="py-2 pr-3 font-medium">最后登录</th>
+            <th class="py-2 pr-3 font-medium">密保</th>
+            <th class="py-2 font-medium text-right">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(u => `
+            <tr style="border-top:1px solid var(--border)">
+              <td class="py-3 pr-3 font-medium">${escAttr(u.accountName)}</td>
+              <td class="py-3 pr-3" style="color:var(--muted)">${escAttr(u.uid)}</td>
+              <td class="py-3 pr-3">${escAttr(u.nickname || "-")}</td>
+              <td class="py-3 pr-3" style="color:var(--muted)">${fmtTime(u.createdAt)}</td>
+              <td class="py-3 pr-3" style="color:var(--muted)">${fmtTime(u.lastLoginAt)}</td>
+              <td class="py-3 pr-3">${u.hasSecret ? '<span class="tag tag-other">已设置</span>' : '<span style="color:var(--muted)">无</span>'}</td>
+              <td class="py-3 text-right">
+                <button class="btn btn-ghost btn-sm" onclick="resetUserPwd('${escAttr(u.accountName)}')"><i class="fa-solid fa-rotate-left"></i> 重置密码</button>
+              </td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+  } catch (e) {
+    console.error(e);
+    wrap.innerHTML = `<div class="text-sm py-6 text-center" style="color:var(--err)">加载失败：${escAttr(e.message || e)}</div>`;
+  }
+}
+
+async function resetUserPwd(accountName) {
+  if (!confirm(`确定将「${accountName}」的密码重置为随机乱码？\n重置后该用户需用新密码重新登录，并可在登录后自行修改。`)) return;
+  try {
+    const r = await callAdmin("resetUserPassword", { accountName });
+    if (!r.ok) throw new Error(r.message || "重置失败");
+    document.getElementById("npAccount").textContent = r.accountName || accountName;
+    document.getElementById("npValue").value = r.newPassword || "";
+    document.getElementById("newPwdModal").classList.add("show");
+    renderUsers();
+  } catch (e) {
+    console.error(e);
+    toast("重置失败：" + (e.message || e), true);
+  }
+}
+function closeNewPwd() { document.getElementById("newPwdModal").classList.remove("show"); }
+function copyNewPwd() {
+  const el = document.getElementById("npValue");
+  el.select();
+  try { document.execCommand("copy"); toast("已复制新密码"); } catch (e) { toast("复制失败，请手动选择复制", true); }
+}
+
+/* ============================================================
+ * 管理员账号管理
+ * ============================================================ */
+let adminModalMode = ""; // add / change
+
+async function renderAdmins() {
+  const wrap = document.getElementById("adminsWrap");
+  const isSuper = __adminRole === "super";
+  document.getElementById("btnAddAdmin").style.display = isSuper ? "" : "none";
+  try {
+    const r = await callAdmin("adminList");
+    if (!r.ok) throw new Error(r.message || "加载失败");
+    // 内置超级管理员账号名由云函数环境变量 ADMIN_USERNAME 下发，源码不含明文
+    const builtin = r.builtinAccount || "";
+    const admins = r.admins || [];
+    let html = "";
+
+    // 系统内置超级管理员（环境变量账号，不可改密 / 删除）
+    if (builtin) {
+      html += `<div class="card p-5 flex items-center gap-4 flex-wrap">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-none" style="background:linear-gradient(135deg,#b06a5a,#7d8f69)">S</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold">${escAttr(builtin)}</span>
+            <span class="tag tag-role-super">超级管理员</span>
+            <span class="tag tag-status">系统内置</span>
+          </div>
+          <div class="text-xs mt-1" style="color:var(--muted)">账号密码在云函数环境变量中配置，不可在此修改或删除。</div>
+        </div>
+      </div>`;
+    }
+
+    if (admins.length) {
+      html += admins.map(a => {
+        const isSelf = a.accountName === __adminCred.username;
+        const roleCls = a.role === "super" ? "tag-role-super" : "tag-role-admin";
+        const roleTxt = a.role === "super" ? "超级管理员" : "管理员";
+        return `<div class="card p-5 flex items-center gap-4 flex-wrap">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-none" style="background:linear-gradient(135deg,${a.role === "super" ? "#b06a5a,#8a5a4a" : "#7d8f69,#5a7185"})">${escAttr(a.accountName.charAt(0).toUpperCase())}</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold">${escAttr(a.accountName)}</span>
+              <span class="tag ${roleCls}">${roleTxt}</span>
+              ${isSelf ? '<span class="tag tag-other">当前账号</span>' : ""}
+            </div>
+            <div class="text-xs mt-1" style="color:var(--muted)">创建于 ${fmtTime(a.createdAt)}</div>
+          </div>
+          <div class="flex gap-2">
+            ${(isSuper || isSelf) ? `<button class="btn btn-ghost btn-sm" onclick="openChangeAdminPwd('${escAttr(a.accountName)}')"><i class="fa-solid fa-key"></i> 改密码</button>` : ""}
+            ${isSuper && !isSelf ? `<button class="btn btn-danger btn-sm" onclick="removeAdmin('${escAttr(a.accountName)}', '${a.role === "super" ? "super" : "admin"}')"><i class="fa-solid fa-trash"></i> 删除</button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    if (!admins.length) {
+      html += `<div class="text-sm py-4 text-center" style="color:var(--muted)">暂无其他管理员账号。</div>`;
+    }
+    wrap.innerHTML = html;
+  } catch (e) {
+    console.error(e);
+    wrap.innerHTML = `<div class="text-sm py-6 text-center" style="color:var(--err)">加载失败：${escAttr(e.message || e)}</div>`;
+  }
+}
+
+function openAddAdmin() {
+  adminModalMode = "add";
+  document.getElementById("adminModalTitle").textContent = "新增管理员";
+  document.getElementById("amAccount").disabled = false;
+  document.getElementById("amAccount").value = "";
+  document.getElementById("amPwdLabel").textContent = "初始密码";
+  document.getElementById("amPwd").value = "";
+  document.getElementById("amTip").textContent = "新增管理员后，该账号即可登录管理后台（普通管理员不可新增 / 删除管理员）。";
+  document.getElementById("adminModal").classList.add("show");
+  setTimeout(() => document.getElementById("amAccount").focus(), 50);
+}
+
+function openChangeAdminPwd(accountName) {
+  adminModalMode = "change";
+  document.getElementById("adminModalTitle").textContent = `修改密码 · ${accountName}`;
+  const acc = document.getElementById("amAccount");
+  acc.value = accountName;
+  acc.disabled = true;
+  document.getElementById("amPwdLabel").textContent = "新密码";
+  document.getElementById("amPwd").value = "";
+  document.getElementById("amTip").textContent = "新密码需 8-32 位。修改后该管理员需用新密码重新登录。";
+  document.getElementById("adminModal").classList.add("show");
+  setTimeout(() => document.getElementById("amPwd").focus(), 50);
+}
+
+function closeAdminModal() { document.getElementById("adminModal").classList.remove("show"); adminModalMode = ""; }
+
+async function submitAdmin() {
+  const accountName = document.getElementById("amAccount").value.trim();
+  const pwd = document.getElementById("amPwd").value;
+  if (!accountName) { toast("请填写账号名", true); return; }
+  if (!pwd || pwd.length < 8) { toast("密码至少 8 位", true); return; }
+  try {
+    let r;
+    if (adminModalMode === "add") {
+      r = await callAdmin("adminAdd", { accountName, password: pwd });
+    } else {
+      r = await callAdmin("adminChangePassword", { accountName, password: pwd });
+    }
+    if (!r.ok) throw new Error(r.message || "操作失败");
+    toast(adminModalMode === "add" ? `已新增管理员「${accountName}」` : `已修改「${accountName}」的密码`);
+    closeAdminModal();
+    renderAdmins();
+  } catch (e) {
+    console.error(e);
+    toast("操作失败：" + (e.message || e), true);
+  }
+}
+
+async function removeAdmin(accountName, role) {
+  if (!confirm(`确定删除管理员「${accountName}」？\n删除后该账号将无法登录管理后台。`)) return;
+  try {
+    const r = await callAdmin("adminDelete", { accountName });
+    if (!r.ok) throw new Error(r.message || "删除失败");
+    toast(`已删除管理员「${accountName}」`);
+    renderAdmins();
+  } catch (e) {
+    console.error(e);
+    toast("删除失败：" + (e.message || e), true);
+  }
+}
+
+/* ============================================================
+ * 工具
+ * ============================================================ */
+function v(id, val) { const el = document.getElementById(id); if (el) el.value = val; return el ? el.value : ""; }
+let toastTimer = null;
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+/* ============================================================
+ * 启动
+ * ============================================================ */
+(async function boot() {
+  if (localStorage.getItem("dpcca_admin_ok") === "1") {
+    try {
+      const auth = getAuth();
+      if (auth.hasLoginState() && auth.currentUser) {
+        // 本地记住登录态：凭证只存内存，刷新后需要重新登录（出于安全）
+        localStorage.removeItem("dpcca_admin_ok");
+      }
+    } catch (e) {}
+  }
+  document.getElementById("loginLayer").classList.remove("hidden");
+})();
+</script>
+
+<script>
+/* ============================================================
+ * 评分与评论（reviews）视图逻辑
+ * 集合 anime_reviews 规则 read=true / write=false：
+ * 列表/统计/隐藏/恢复/删除/回填均走 admin_login 云函数。
+ * ============================================================ */
+let revStatsCache = null;
+let revCharts = { hist: null, trend: null };
+let revLibLoaded = null;                     // Promise<array>：番剧文库（供卡片封面/详情资料，独立于番剧管理视图）
+let revLib = [];                             // 已加载的文库
+let revLibBy = {};                           // id / _id → 文库对象
+let revSel = null;                           // 当前选中番剧 {animeId, stats, lib}
+let revRows = [];                            // 当前番剧全部评分/评论行
+let revCardQ = "";                           // 番剧卡片筛选词
+let revF = { open: { kw: "", st: "" }, final: { kw: "", st: "" }, ep: { kw: "", st: "", ep: "all" } };
+
+function revEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+function revTime(ts) { if (!ts) return "—"; const d = new Date(ts), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+function revTypeLabel(t, ep) { return t === "open" ? "开播" : t === "final" ? "完结" : "EP" + (ep || "?"); }
+function revConfirm(m) { return window.confirm(m); }
+
+async function renderReviews(force) {
+  if (force) revStatsCache = null;
+  if (!revStatsCache) {
+    try { revStatsCache = (await callAdmin("reviewStats")) || {}; }
+    catch (e) {
+      document.getElementById("revAnimeWrap").innerHTML = '<div class="col-span-full text-sm py-6 text-center" style="color:var(--muted)">' + revEsc((e && e.message) || "加载失败") + "</div>";
+      return;
+    }
+  }
+  const s = revStatsCache, ov = s.overview || {};
+  document.getElementById("revTotal").textContent = (ov.total || 0).toLocaleString();
+  document.getElementById("revNormal").textContent = (ov.normal || 0).toLocaleString();
+  document.getElementById("revHidden").textContent = (ov.hidden || 0).toLocaleString();
+  document.getElementById("revAnimeN").textContent = ((s.anime || []).length).toLocaleString();
+  renderRevCharts(s);
+  await revEnsureLib();
+  renderRevCards(s.anime || []);
+  if (revSel) await renderRevDetail();
+}
+
+function renderRevCharts(s) {
+  if (typeof Chart === "undefined") return;
+  const hist = (s.hist || []).map(x => [String(x[0]), x[1]]);
+  if (revCharts.hist) revCharts.hist.destroy();
+  const c1 = document.getElementById("revHistChart");
+  if (c1) {
+    revCharts.hist = new Chart(c1, {
+      type: "bar",
+      data: { labels: hist.map(x => x[0]), datasets: [{ label: "评分条数", data: hist.map(x => x[1]), backgroundColor: "rgba(120,133,180,0.85)", borderRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+  }
+  if (revCharts.trend) revCharts.trend.destroy();
+  const days = s.recent30 || {};
+  const c2 = document.getElementById("revTrendChart");
+  if (c2) {
+    revCharts.trend = new Chart(c2, {
+      type: "line",
+      data: { labels: Object.keys(days), datasets: [{ label: "提交数", data: Object.keys(days).map(k => days[k]), borderColor: "rgba(94,121,178,1)", backgroundColor: "rgba(94,121,178,.16)", fill: true, tension: .3, pointRadius: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+  }
+}
+
+async function revEnsureLib() {
+  if (!revLibLoaded) {
+    revLibLoaded = (async function () {
+      try {
+        const db = await getDB();
+        const PAGE = 1000;
+        let skip = 0, out = [];
+        for (;;) {
+          const res = await db.collection("anime_library").orderBy("id", "asc").skip(skip).limit(PAGE).get();
+          const list = (res && res.data) || [];
+          out = out.concat(list);
+          if (list.length < PAGE) break;
+          skip += PAGE;
+        }
+        revLib = out.map(function (r) {
+          if (r && typeof r === "object" && r.data && typeof r.data === "object" && !r.title && r.data.title) return Object.assign({ _id: r._id }, r.data);
+          return r;
+        });
+        revLibBy = {};
+        revLib.forEach(function (d) { if (d) { if (d.id) revLibBy[d.id] = d; if (d._id) revLibBy[d._id] = d; } });
+      } catch (e) {
+        console.error(e);
+        revLib = []; revLibBy = {};
+      }
+      return revLib;
+    })();
+  }
+  return revLibLoaded;
+}
+
+/* ---------- 番剧卡片选择网格 ---------- */
+function revCardSearch() {
+  revCardQ = (document.getElementById("revCardFilter").value || "").trim();
+  renderRevCards(((revStatsCache && revStatsCache.anime) || []));
+}
+
+function revCoverHTML(lib) {
+  const emoji = (lib && lib.emoji) || "🎬";
+  const g = (lib && lib.gradient && lib.gradient.length >= 2) ? lib.gradient : ["#14245e", "#3a2b5f"];
+  const bg = '<div style="position:relative;width:56px;height:78px;flex:none;border-radius:8px;overflow:hidden;background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ');display:flex;align-items:center;justify-content:center;font-size:30px">' + revEsc(emoji);
+  const cover = lib && lib.cover;
+  if (!cover) return bg + "</div>";
+  return bg + '<img src="' + revEsc(cover) + '" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.remove()"></div>';
+}
+
+function revCardTpl(a) {
+  const animeId = a.animeId;
+  const lib = revLibBy[animeId] || null;
+  const title = (lib && lib.title) || a.title || animeId;
+  const sel = revSel && String(revSel.animeId) === String(animeId);
+  const chip = function (label, avg, n, unit) {
+    if (avg == null || !n) return "";
+    return '<div>· ' + label + '：<b style="color:#e0b45f">' + revEsc(avg) + "</b> 分 · " + n + " " + unit + "</div>";
+  };
+  return '<div onclick="revToggle(\'' + revEsc(animeId) + '\')" title="点击展开 / 收起" style="cursor:pointer;border-radius:14px;padding:12px;border:1.5px solid ' + (sel ? "var(--primary)" : "var(--border)") + ';background:' + (sel ? "rgba(99,102,241,.06)" : "var(--card)") + '">' +
+    '<div style="display:flex;gap:10px">' +
+    revCoverHTML(lib) +
+    '<div class="min-w-0 flex-1">' +
+    '<div class="font-bold text-sm truncate" title="' + revEsc(title) + '">' + revEsc(title) + "</div>" +
+    '<div class="text-[11px]" style="color:var(--muted)">' + revEsc(animeId) + "</div>" +
+    '<div class="text-[11px] mt-1 space-y-0.5" style="color:#aab1c4;line-height:1.55">' +
+    chip("开播", a.openAvg, a.open || 0, "人") +
+    chip("完结", a.finalAvg, a.final || 0, "人") +
+    chip("单集", a.epAvg, a.ep || 0, "条") +
+    "</div>" +
+    "</div></div>" +
+    '<div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted)"><span>共 ' + (a.total || 0) + " 条</span><span>" + (sel ? "▼ 已展开" : "点击查看 →") + "</span></div>" +
+    "</div>";
+}
+
+function renderRevCards(list) {
+  const wrap = document.getElementById("revAnimeWrap");
+  if (!wrap) return;
+  const countEl = document.getElementById("revAnimeCount");
+  if (countEl) countEl.textContent = "共 " + list.length + " 部";
+  if (!list.length) {
+    wrap.innerHTML = '<div class="col-span-full text-sm py-8 text-center" style="color:var(--muted)">暂无评分 / 评论。用户提交开播 / 完结 / 单集评分后会自动出现；或点击「历史评分回填」把已有 D 账号评分补齐。</div>';
+    return;
+  }
+  const q = (revCardQ || "").toLowerCase();
+  const qs = q.split(/\s+/).filter(Boolean);
+  let arr = list;
+  if (qs.length) {
+    arr = list.filter(function (a) {
+      const l = revLibBy[a.animeId] || {};
+      const hay = ((a.title || "") + " " + String(a.animeId) + " " + ((l && l.title) || "") + " " + ((l && (l.tags || []).join(" ")) || "")).toLowerCase();
+      return qs.every(k => hay.indexOf(k) >= 0);
+    });
+  }
+  if (!arr.length) {
+    wrap.innerHTML = '<div class="col-span-full text-sm py-8 text-center" style="color:var(--muted)">没有匹配的番剧</div>';
+    return;
+  }
+  wrap.innerHTML = arr.map(revCardTpl).join("");
+}
+
+/* ---------- 番剧详情：点击卡片展开，左侧资料 / 右侧开播·单集·完结分区 ---------- */
+function revResetFilters() {
+  revF = { open: { kw: "", st: "" }, final: { kw: "", st: "" }, ep: { kw: "", st: "", ep: "all" } };
+}
+
+function revToggle(animeId) {
+  const id = String(animeId);
+  const wrap = document.getElementById("revDetail");
+  if (revSel && String(revSel.animeId) === id) {
+    revSel = null; revRows = [];
+    if (wrap) { wrap.classList.add("hidden"); wrap.innerHTML = ""; }
+    renderRevCards(((revStatsCache && revStatsCache.anime) || []));
+    return;
+  }
+  revSel = { animeId: id };
+  revResetFilters();
+  renderRevCards(((revStatsCache && revStatsCache.anime) || []));
+  renderRevDetail();
+  if (wrap) setTimeout(function () { wrap.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80);
+}
+
+async function revFetchRowsAll(animeId) {
+  const out = [];
+  const PS = 200;
+  let page = 1;
+  for (;;) {
+    const res = await callAdmin("reviewList", { animeId: String(animeId), page: page, pageSize: PS });
+    if (!res.ok) throw new Error(res.message || "加载失败");
+    const list = res.list || [];
+    out.push.apply(out, list);
+    if (out.length >= (res.total || 0) || list.length < PS) break;
+    page++;
+  }
+  return out;
+}
+
+async function renderRevDetail() {
+  const wrap = document.getElementById("revDetail");
+  if (!wrap) return;
+  if (!revSel) { wrap.classList.add("hidden"); wrap.innerHTML = ""; return; }
+  const animeId = revSel.animeId;
+  revSel.stats = (((revStatsCache && revStatsCache.anime) || []).find(x => String(x.animeId) === String(animeId))) || null;
+  revSel.lib = revLibBy[animeId] || null;
+  wrap.classList.remove("hidden");
+  wrap.innerHTML = '<div class="card p-8 text-center text-sm" style="color:var(--muted)">加载中…</div>';
+  try {
+    revRows = await revFetchRowsAll(animeId);
+    if (!revSel || String(revSel.animeId) !== String(animeId)) return; // 等待期间切走了
+    wrap.innerHTML = revDetailTpl();
+    ["open", "ep", "final"].forEach(function (t) { revFillHead(t); revFillRows(t); });
+  } catch (e) {
+    wrap.innerHTML = '<div class="card p-8 text-center text-sm" style="color:#b14a3c">' + revEsc((e && e.message) || "加载失败") + "</div>";
+  }
+}
+
+function revPad2(n) { return String(n == null ? "" : n).padStart(2, "0"); }
+function revBigCover(lib) {
+  const emoji = (lib && lib.emoji) || "🎬";
+  const g = (lib && lib.gradient && lib.gradient.length >= 2) ? lib.gradient : ["#14245e", "#3a2b5f"];
+  const base = '<div style="position:relative;width:100%;aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ');display:flex;align-items:center;justify-content:center;font-size:52px">' + revEsc(emoji);
+  const cover = lib && lib.cover;
+  if (!cover) return base + "</div>";
+  return base + '<img src="' + revEsc(cover) + '" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.remove()"></div>';
+}
+function revInfoRows() {
+  const lib = revSel.lib;
+  if (!lib) return '<div class="text-xs" style="color:var(--muted)">云端文库暂无该番剧资料（仅展示评分 / 评论管理）</div>';
+  const tags = (lib.tags || []).slice(0, 5);
+  let h = '<div class="text-xs flex gap-2" style="color:var(--muted)"><span class="flex-none" style="width:58px">开播日期</span><span style="color:#c8cede">' + revEsc((lib.year || "----") + "." + revPad2(lib.month != null ? lib.month : "") + "." + revPad2(lib.day != null ? lib.day : "")) + "</span></div>";
+  h += '<div class="text-xs flex gap-2" style="color:var(--muted)"><span class="flex-none" style="width:58px">类型来源</span><span style="color:#c8cede">' + revEsc(((lib.source || "—") + (lib.quarter != null ? " · Q" + lib.quarter : ""))) + "</span></div>";
+  h += '<div class="text-xs flex gap-2" style="color:var(--muted)"><span class="flex-none" style="width:58px">总集数</span><span style="color:#c8cede">' + revEsc(lib.episodes ? lib.episodes + " 集" : "—") + "</span></div>";
+  if (tags.length) h += '<div class="text-xs flex gap-2" style="color:var(--muted)"><span class="flex-none" style="width:58px">标签</span><span style="color:#c8cede">' + tags.map(x => '<span class="tag tag-other" style="margin-right:4px">' + revEsc(x) + "</span>").join("") + "</span></div>";
+  if (lib.desc) h += '<div class="text-xs mt-2" style="color:var(--muted);line-height:1.7">' + revEsc(String(lib.desc).slice(0, 180)) + (String(lib.desc).length > 180 ? "…" : "") + "</div>";
+  return h;
+}
+
+function revDetailTpl() {
+  const lib = revSel.lib, entry = revSel.stats || {};
+  const title = (lib && lib.title) || entry.title || revSel.animeId;
+  const dims = revDimTpl("open") + revDimTpl("ep") + revDimTpl("final");
+  return '<div class="card overflow-hidden">' +
+    '<div class="px-5 py-4 border-b flex items-center gap-3 flex-wrap" style="border-color:var(--border)">' +
+    '<button class="btn btn-ghost btn-sm" onclick="revToggle(\'' + revEsc(revSel.animeId) + '\')"><i class="fa-solid fa-arrow-left"></i> 返回番剧选择</button>' +
+    '<div class="min-w-0"><div class="font-bold text-lg truncate">' + revEsc(title) + '</div>' +
+    '<div class="text-xs" style="color:var(--muted)">' + revEsc(revSel.animeId) + " · 共 " + revRows.length + " 条评分/评论行（开播 · 单集 · 完结）</div></div>" +
+    '<span class="ml-auto text-[11px] hidden md:inline" style="color:var(--muted)">说明：隐藏 = 不展示且不计入统计；仅计分 = 纯评分未填短评，评分仍会同步展示在公开墙与个人档案，并计入人数 / 均分。</span>' +
+    "</div>" +
+    '<div class="grid grid-cols-1 lg:grid-cols-[290px_1fr] gap-4 p-5">' +
+    '<div class="min-w-0">' + revBigCover(lib) + '<div class="mt-3 space-y-1">' + revInfoRows() + "</div></div>" +
+    '<div class="min-w-0 space-y-4">' + dims + "</div>" +
+    "</div></div>";
+}
+
+function revEpOptions() {
+  const set = {};
+  revRows.forEach(function (r) { if (r.type === "ep") set[r.ep] = (set[r.ep] || 0) + 1; });
+  const eps = Object.keys(set).sort(function (x, y) { return Number(x) - Number(y); });
+  let h = '<option value="all">全部单集（' + revRows.filter(r => r.type === "ep").length + " 条）</option>";
+  eps.forEach(function (ep) {
+    h += '<option value="' + revEsc(ep) + '"' + (String(revF.ep.ep) === String(ep) ? " selected" : "") + ">EP" + revEsc(ep) + "（" + set[ep] + " 条）</option>";
+  });
+  return h;
+}
+
+function revDimTpl(type) {
+  const info = { open: { ic: "🚀", label: "开播评分" }, ep: { ic: "🎬", label: "单集评分" }, final: { ic: "🏁", label: "完结评分" } }[type] || { ic: "⭐", label: "评分" };
+  let extra = "";
+  if (type === "ep") {
+    extra = '<div class="flex items-center gap-2 text-xs flex-wrap" style="margin-top:8px"><span style="color:var(--muted)">查看单集：</span><select id="revEpSel" class="inp" style="max-width:240px" onchange="revSetFilter(\'ep\',\'ep\',this.value)">' + revEpOptions() + "</select></div>";
+  }
+  const stVal = revF[type] ? revF[type].st : "";
+  return '<div style="border:1px solid var(--border);border-radius:14px;padding:12px 14px">' +
+    '<div class="flex items-center gap-2 flex-wrap text-sm">' +
+    '<span>' + info.ic + ' <b>' + info.label + "</b></span>" +
+    '<span class="text-xs font-normal" style="color:var(--muted)" id="revHead-' + type + '"></span>' +
+    '<span class="ml-auto flex items-center gap-2 text-xs">' +
+    '<select id="revSt-' + type + '" class="inp" style="max-width:118px" onchange="revSetFilter(\'' + type + '\',\'st\',this.value)">' +
+    '<option value="">全部状态</option>' +
+    '<option value="normal"' + (stVal === "normal" ? " selected" : "") + ">正常</option>" +
+    '<option value="hidden"' + (stVal === "hidden" ? " selected" : "") + ">已隐藏</option></select>" +
+    '<input id="revKw-' + type + '" class="inp" style="max-width:170px" placeholder="搜索用户 / 短评…" value="' + revEsc((revF[type] && revF[type].kw) || "") + '" onkeydown="if(event.key===\'Enter\')revSetFilter(\'' + type + '\',\'kw\',this.value)">' +
+    "</span></div>" +
+    extra +
+    '<div id="revList-' + type + '" class="mt-2 space-y-2 max-h-[52vh] overflow-y-auto pr-1"></div>' +
+    "</div>";
+}
+
+/* 三端同步语义下 anime_reviews 的每一行都公开展示（个人档案为唯一事实源，保存/删除评分都会
+ * 同步墙行），已不存在“未公开 / 不上墙”的行。此判断仅用于区分“附短评”与“仅计分（未填短评）”。 */
+function revRowPublic(r) {
+  return !!(r && String(r.comment || "").trim());
+}
+
+function revHeadStat(type) {
+  let arr = revRows.filter(r => r.type === type && r.status === "normal");
+  if (type === "ep" && revF.ep.ep && revF.ep.ep !== "all") arr = arr.filter(r => String(r.ep) === String(revF.ep.ep));
+  const n = arr.length;
+  let sum = 0;
+  arr.forEach(r => { sum += Number(r.score) || 0; });
+  const pub = arr.filter(revRowPublic).length;
+  const silent = n - pub;
+  const avg = n ? (Math.round((sum / n) * 10) / 10) : null;
+  if (avg == null) return "暂无评分";
+  return "均分 " + avg + " 分 · " + n + " 人评分 · 附短评 " + pub + " 条 · 仅计分 " + silent + " 条";
+}
+function revFillHead(type) {
+  const el = document.getElementById("revHead-" + type);
+  if (el) el.textContent = revHeadStat(type);
+}
+
+function revFilteredRows(type) {
+  const f = revF[type] || {};
+  let arr = revRows.filter(r => r.type === type);
+  if (type === "ep" && f.ep && f.ep !== "all") arr = arr.filter(r => String(r.ep) === String(f.ep));
+  if (f.st) arr = arr.filter(r => r.status === f.st);
+  const kw = String(f.kw || "").trim().toLowerCase();
+  if (kw) arr = arr.filter(r => String((r.uid || "") + " " + (r.nickname || "") + " " + (r.comment || "")).toLowerCase().indexOf(kw) >= 0);
+  arr.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  return arr;
+}
+function revFillRows(type) {
+  const wrap = document.getElementById("revList-" + type);
+  if (!wrap) return;
+  const arr = revFilteredRows(type);
+  if (!arr.length) { wrap.innerHTML = '<div class="text-sm py-6 text-center" style="color:var(--muted)">没有符合条件的评分 / 评论。</div>'; return; }
+  wrap.innerHTML = arr.map(revRowTpl).join("");
+}
+function revSetFilter(type, key, val) {
+  if (!revF[type]) revF[type] = { kw: "", st: "", ep: "all" };
+  revF[type][key] = val;
+  if (key === "ep") revFillHead("ep");
+  revFillRows(type);
+}
+
+function revRowTpl(r) {
+  const hidden = r.status === "hidden";
+  const pub = revRowPublic(r);
+  const nick = r.nickname || ("追番人 " + String(r.uid || "").slice(-4));
+  const t = r.type === "ep" ? "EP" + (r.ep || "?") : (r.type === "open" ? "开播" : "完结");
+  const sc = Number(r.score) > 0 ? "<b style='color:var(--warn)'>" + r.score + " 分</b>" : "<span style='color:var(--muted)'>—</span>";
+  let tags = "";
+  if (hidden) tags += '<span style="font-size:11px;color:var(--warn);border:1px solid var(--warn);border-radius:6px;padding:0 6px">已隐藏</span>';
+  if (!pub) tags += '<span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:0 6px">仅计分 · 未填短评</span>';
+  return '<div style="border:1px solid var(--border);border-radius:12px;padding:10px 12px"' + (hidden ? ' class="opacity-70"' : "") + ">" +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px">' +
+    '<span style="font-size:11px;padding:1px 7px;border-radius:6px;background:var(--primary-soft)">' + t + "</span>" +
+    '<b class="truncate" style="max-width:170px">' + revEsc(nick) + '</b>' +
+    '<span style="color:var(--muted);font-size:11px">' + revEsc(r.uid || "") + "</span>" +
+    '<span style="color:var(--muted);font-size:11px">' + revTime(r.updatedAt || r.createdAt) + "</span>" +
+    tags +
+    '<span style="margin-left:auto;display:flex;gap:6px">' +
+    (hidden
+      ? '<button class="btn btn-ghost btn-sm" onclick="revRowAct(\'' + revEsc(r._id) + '\',\'restore\')">恢复</button>'
+      : '<button class="btn btn-ghost btn-sm" onclick="revRowAct(\'' + revEsc(r._id) + '\',\'hide\')">隐藏</button>') +
+    '<button class="btn btn-ghost btn-sm" style="color:#b14a3c" onclick="revRowAct(\'' + revEsc(r._id) + '\',\'delete\')">彻底删除</button>' +
+    "</span></div>" +
+    '<div style="margin-top:6px;font-size:13px">' + sc + "</div>" +
+    (r.comment ? '<div style="margin-top:4px;font-size:13px;color:#333;word-break:break-word">"' + revEsc(r.comment) + '"</div>' : "") +
+    "</div>";
+}
+
+async function revRowAct(id, kind) {
+  const action = kind === "restore" ? "reviewRestore" : kind === "hide" ? "reviewHide" : "reviewDelete";
+  const tip = kind === "restore" ? "恢复这条评分 / 评论到公开展示（重新计入人数 / 均分）？" : kind === "hide" ? "隐藏这条评分 / 评论（不再公开展示、不参与人数 / 均分，可随时恢复）？" : "彻底删除这条评分 / 评论？此操作不可恢复！\n（将同时从该用户追番档案中移除对应的评分与短评，个人端刷新后不再显示）";
+  if (!revConfirm(tip)) return;
+  try {
+    const res = await callAdmin(action, { _id: id });
+    if (!res.ok) throw new Error(res.message || "操作失败");
+    revStatsCache = null;
+    await renderReviews();
+  } catch (e) {
+    alert((e && e.message) || "操作失败");
+  }
+}
+
+/* ---------- 历史评分回填（dryRun 预览 → 二次确认执行） ---------- */
+async function revBackfill() {
+  try {
+    const prev = await callAdmin("reviewBackfill", { dryRun: true });
+    if (!prev.ok) throw new Error(prev.message || "预览失败");
+    const confirmText =
+      "将全量扫描注册 D 账号的追番数据并把评分补上公开墙（幂等，不覆盖已有/已隐藏评论）。\n\n" +
+      "预览结果：\n" +
+      "· 参与账号：" + prev.accounts + " 个\n" +
+      "· 可生成的评论行：" + prev.candidates + " 条\n" +
+      "· 已存在的行（跳过）：" + prev.existed + " 条\n" +
+      "· 本次将新建：" + prev.created + " 条\n\n" +
+      "是否执行？";
+    if (!revConfirm(confirmText)) return;
+    const res = await callAdmin("reviewBackfill", { dryRun: false });
+    if (!res.ok) throw new Error(res.message || "回填失败");
+    alert("回填完成：本次新建 " + res.created + " 条评分行，跳过已存在 " + res.existed + " 条。");
+    revStatsCache = null;
+    await renderReviews();
+  } catch (e) {
+    alert((e && e.message) || "回填失败");
+  }
+}
+</script>
+</body>
+</html>
