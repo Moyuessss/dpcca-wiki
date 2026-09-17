@@ -1,0 +1,2425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>我的追番 · DPCCA 追番评分库</title>
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/2.32.0/cloudbase.full.js"></script>
+<script src="auth.js?v=6"></script>
+<script src="reviewwall.js?v=5"></script>
+<script src="announcement.js?v=1"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
+<style>
+  :root {
+    --bg: #f5f0e6;
+    --card: #fdfaf4;
+    --border: #e6dcc8;
+    --text: #5c4a3d;
+    --muted: #a8988a;
+    --primary: #d4c4a8;
+    --primary-hover: #c2ae8c;
+    --primary-soft: #efe7d9;
+    --ok: #7d8f69;
+    --warn: #c09a5b;
+    --err: #b06a5a;
+    --shadow: 0 4px 14px rgba(92, 74, 61, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d4c4a8; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #c2ae8c; }
+
+  .glass {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .gradient-text {
+    color: #c2ae8c;
+    background: none;
+    -webkit-text-fill-color: initial;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 8px; cursor: pointer;
+    font-size: 14px; font-weight: 500; border: 1px solid var(--border);
+    background: #fffdf8; color: var(--text);
+    transition: all .2s ease; user-select: none;
+  }
+  .btn:hover { background: var(--primary-soft); }
+  .btn-primary { background: var(--primary); border-color: transparent; color: #4a3a2e; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-ghost { background: transparent; border-color: transparent; }
+  .btn-ghost:hover { background: var(--primary-soft); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(245,240,230,.92); border-bottom: 1px solid var(--border); }
+  .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--muted); }
+  .tag-watching { color: #5f7350; border-color: rgba(125,143,105,.5); background: rgba(125,143,105,.12); }
+  .tag-finished { color: #5a7185; border-color: rgba(90,113,133,.5); background: rgba(90,113,133,.12); }
+  .tag-abandoned { color: var(--err); border-color: rgba(176,106,90,.45); background: rgba(176,106,90,.1); }
+  .tag-none { color: var(--muted); }
+  .score-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: rgba(0,0,0,.04); border: 1px solid var(--border); color: var(--muted); }
+
+  /* 统计卡片 */
+  .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat-card { background: var(--primary-soft); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; text-align: center; }
+  .stat-card .stat-num { font-size: 20px; font-weight: 800; color: var(--text); line-height: 1.1; }
+  .stat-card .stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* 视图切换 */
+  .seg { display: inline-flex; background: var(--primary-soft); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button { border: none; background: transparent; padding: 7px 13px; border-radius: 8px; font-size: 12px; color: var(--muted); cursor: pointer; font-weight: 600; transition: all .2s; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--primary); color: #4a3a2e; font-weight: 700; }
+
+  /* 一图流汇总卡片 */
+  #summaryCard { width: min(880px, 100%); background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: relative; overflow: hidden; font-family: inherit; color: var(--text); }
+  #summaryCard .pf-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  #summaryCard .pf-title { font-size: 20px; font-weight: 800; }
+  #summaryCard .pf-sub { font-size: 11px; color: #a8988a; margin-top: 2px; }
+  #summaryCard .pf-emoji { font-size: 24px; }
+  .pf-del { flex: none; width: 30px; height: 30px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: #a8988a; cursor: pointer; transition: all .2s; border: 1px solid transparent; }
+  .pf-del:hover { color: #e05252; background: rgba(224,82,82,.12); border-color: rgba(224,82,82,.35); }
+  .pf-del-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#d9534f,#b54540); cursor: pointer; border: none; transition: all .2s; box-shadow: 0 4px 14px rgba(185,69,64,.3); }
+  .pf-del-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(185,69,64,.4); }
+
+  /* 右侧筛选面板（标签云） */
+  .filter-panel { background: rgba(255,255,255,.45); border: 1px solid var(--border); border-radius: 14px; padding: 14px; position: sticky; top: 84px; }
+  .filter-panel summary { list-style: none; }
+  .filter-panel summary::-webkit-details-marker { display: none; }
+  .filter-panel summary .fa-chevron-down { transition: transform .2s; }
+  .filter-panel[open] summary .fa-chevron-down { transform: rotate(180deg); }
+  .filter-title { font-size: 12px; font-weight: 800; color: #4a3a2e; margin-bottom: 10px; padding-left: 8px; border-left: 3px solid var(--primary); letter-spacing: .02em; }
+  .filter-row { margin-bottom: 14px; }
+  .filter-row:last-of-type { margin-bottom: 0; }
+  .filter-btn { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: transparent; border-color: transparent; color: #6b5e51; }
+  .filter-btn:hover { background: rgba(0,0,0,.06); }
+  .filter-btn.btn-primary { background: var(--primary); border-color: var(--primary); color: #4a3a2e; font-weight: 700; }
+
+  /* 简略视图：方格卡片 */
+  .pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 14px; }
+  .pf-card { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform .25s, box-shadow .25s, border-color .25s; }
+  .pf-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: var(--warn); }
+  .pf-card .cover { aspect-ratio: 4/5; display: flex; align-items: center; justify-content: center; font-size: 46px; overflow: hidden; }
+  .pf-card-body { padding: 10px 12px 12px; }
+  .pf-card-title { font-size: 13px; font-weight: 700; line-height: 1.4; height: 2.8em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pf-card-meta { font-size: 10px; color: var(--muted); margin: 4px 0 6px; }
+  .pf-card-score { font-size: 15px; font-weight: 800; color: var(--warn); margin-bottom: 8px; }
+  .pf-card-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .pf-card .pf-del { position: absolute; top: 8px; right: 8px; background: rgba(253,250,244,.85); border-color: var(--border); opacity: 0; transition: opacity .2s; }
+  .pf-card:hover .pf-del, .pf-card .pf-del:focus-visible { opacity: 1; }
+
+  /* 详细视图：横条 + 下拉展开 */
+  .pf-detail-list { display: flex; flex-direction: column; gap: 10px; }
+  .pf-row { border: 1px solid var(--border); border-radius: 14px; background: var(--card); overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+  .pf-row.open { border-color: rgba(192,154,91,.55); box-shadow: var(--shadow); }
+  .pf-row-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; transition: background .2s; }
+  .pf-row-head:hover { background: rgba(0,0,0,.02); }
+  .pf-row-title { font-weight: 700; font-size: 15px; }
+  .pf-row-score { color: var(--warn); font-weight: 800; font-size: 15px; }
+  .pf-row-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .pf-row .chev { flex: none; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--muted); transition: transform .25s, background .2s; }
+  .pf-row .chev:hover { background: rgba(0,0,0,.05); color: var(--text); }
+  .pf-row.open .chev { transform: rotate(180deg); color: var(--warn); }
+  .pf-row-body { display: none; padding: 0 14px 14px 14px; border-top: 1px dashed var(--border); }
+  .pf-row.open .pf-row-body { display: block; animation: fadeIn .2s ease; }
+
+  .detail-blocks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .detail-block { background: var(--primary-soft); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-width: 120px; flex: 1; }
+  .detail-block .db-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .detail-block .db-val { font-size: 13px; font-weight: 700; color: var(--text); }
+  .detail-block .db-cmt { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+
+  /* 展开区：各集评分网格 */
+  .pf-sub-label { font-size: 11px; font-weight: 800; color: #4a3a2e; margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
+  .pf-sub-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .ep-cell { display: flex; flex-direction: column; gap: 3px; background: rgba(0,0,0,.03); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 11px; }
+  .ep-cell.done { border-color: rgba(125,143,105,.35); background: rgba(125,143,105,.06); }
+  .ep-cell .ep-t { font-weight: 800; color: var(--text); }
+  .ep-cell .ep-t .st { font-weight: 400; color: var(--ok); margin-left: 5px; }
+  .ep-cell .ep-t .todo { font-weight: 400; color: var(--muted); margin-left: 5px; opacity: .7; }
+  .ep-cell .ep-stars { color: var(--warn); font-size: 12px; line-height: 1.2; }
+  .ep-cell .ep-cmt { color: var(--muted); line-height: 1.45; word-break: break-all; }
+
+  /* 展开区：评论汇总 */
+  .pf-comments { margin-top: 2px; }
+  .pf-comment { display: flex; gap: 8px; padding: 6px 0; font-size: 12px; line-height: 1.6; border-top: 1px dashed rgba(139,115,85,.2); }
+  .pf-comment .pc-tag { flex: none; font-weight: 700; color: #c09a5b; }
+  .pf-comment .pc-txt { color: var(--text); word-break: break-all; }
+  .pf-comment .pc-none { color: var(--muted); opacity: .7; }
+
+  .pf-foot { margin-top: 14px; font-size: 11px; color: #b3a08e; text-align: center; }
+
+  /* 追番清单分组标题（状态分组：追番中 → 已看完 → 已弃番） */
+  .pf-group + .pf-group { margin-top: 20px; }
+  .pf-group-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; color: #4a3a2e; margin: 18px 0 10px; }
+  .pf-group-title::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .pf-group-count { flex: none; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--primary-soft); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+
+  /* ===== 一图流导出专用 DOM =====
+   * html2canvas 1.4.1 不支持 CSS Grid / flex / aspect-ratio / min()，
+   * 导出时构建独立的专用 DOM，全部使用 inline-block + 绝对定位 + 固定尺寸。
+   */
+  #exportHolder { width: 880px; background: #fffaf3; padding: 26px 28px; font-size: 0; }
+  #exportHolder * { box-sizing: border-box; }
+  #exportHolder .ex-head { position: relative; padding-bottom: 14px; border-bottom: 2px solid #e0d0b4; margin-bottom: 14px; }
+  #exportHolder .ex-title { font-size: 24px; font-weight: 800; color: #5c4a3d; line-height: 1.2; }
+  #exportHolder .ex-sub { font-size: 12px; color: #a8988a; margin-top: 4px; }
+  #exportHolder .ex-emoji { position: absolute; right: 0; top: 0; font-size: 38px; }
+  #exportHolder .ex-stats { text-align: center; margin-bottom: 16px; }
+  #exportHolder .ex-stat { display: inline-block; width: 118px; padding: 10px 4px; background: #efe7d9; border: 1px solid #e0d0b4; border-radius: 12px; margin: 0 3px; font-size: 12px; }
+  #exportHolder .ex-stat .n { font-size: 24px; font-weight: 800; color: #5c4a3d; line-height: 1.1; }
+  #exportHolder .ex-stat .l { font-size: 11px; color: #a8988a; margin-top: 2px; }
+  #exportHolder .ex-card { display: inline-block; width: 148px; margin: 0 6px 16px; vertical-align: top; background: #fffdf8; border: 1px solid #e8ddc8; border-radius: 12px; overflow: hidden; }
+  #exportHolder .ex-cover { width: 148px; height: 185px; overflow: hidden; }
+  #exportHolder .ex-cover .cover-emoji { display: block; line-height: 185px; text-align: center; }
+  #exportHolder .ex-body { padding: 8px 10px 10px; font-size: 12px; }
+  #exportHolder .ex-cname { font-size: 13px; font-weight: 700; color: #5c4a3d; line-height: 1.4; height: 36px; overflow: hidden; }
+  #exportHolder .ex-meta { font-size: 10px; color: #a8988a; margin: 4px 0 6px; }
+  #exportHolder .ex-score { font-size: 15px; font-weight: 800; color: #c09a5b; margin-bottom: 6px; }
+  #exportHolder .tag { display: inline-block; }
+  #exportHolder .ex-chip { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid #e8ddc8; background: rgba(0,0,0,.04); margin: 1px 3px 1px 0; }
+  #exportHolder .ex-foot { text-align: center; font-size: 11px; color: #b3a08e; margin-top: 4px; padding-top: 12px; border-top: 1px solid #e8ddc8; }
+
+  /* 一图流导出：详细视图 */
+  #exportHolder .exd-list { margin-top: 10px; }
+  #exportHolder .exd-row { background: #fffdf8; border: 1px solid #e8ddc8; border-radius: 14px; overflow: hidden; margin-bottom: 14px; }
+  #exportHolder .exd-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+  #exportHolder .exd-thumb { width: 44px; height: 56px; border-radius: 6px; object-fit: cover; flex: none; background: #f0e6d8; display: block; }
+  #exportHolder .exd-main { flex: 1; min-width: 0; }
+  #exportHolder .exd-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  #exportHolder .exd-title { font-size: 16px; font-weight: 700; color: #5c4a3d; }
+  #exportHolder .exd-score { font-size: 14px; font-weight: 700; color: #c09a5b; }
+  #exportHolder .exd-meta { font-size: 11px; color: #a8988a; }
+  #exportHolder .exd-body { border-top: 1px solid #efe7d9; padding: 14px; font-size: 12px; }
+  #exportHolder .exd-blocks { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  #exportHolder .exd-block { flex: 1; min-width: 120px; background: #f8f3eb; border: 1px solid #e8ddc8; border-radius: 10px; padding: 10px; }
+  #exportHolder .exd-blabel { font-size: 11px; color: #a8988a; margin-bottom: 4px; }
+  #exportHolder .exd-bval { font-size: 15px; font-weight: 700; color: #5c4a3d; }
+  #exportHolder .exd-bcmt { font-size: 11px; color: #8a7766; margin-top: 4px; }
+  #exportHolder .exd-section-title { font-size: 13px; font-weight: 700; color: #5c4a3d; margin: 12px 0 8px; }
+  #exportHolder .exd-ep-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  #exportHolder .exd-ep-cell { width: calc(25% - 6px); background: #f8f3eb; border: 1px solid #e8ddc8; border-radius: 8px; padding: 8px; }
+  #exportHolder .exd-ep-t { font-size: 11px; color: #a8988a; display: block; margin-bottom: 3px; }
+  #exportHolder .exd-ep-score { font-size: 12px; color: #5c4a3d; font-weight: 700; display: block; margin-bottom: 2px; }
+  #exportHolder .exd-ep-cmt { font-size: 11px; color: #8a7766; display: block; overflow: hidden; }
+  #exportHolder .exd-comments { display: flex; flex-direction: column; gap: 8px; }
+  #exportHolder .exd-comment { background: #f8f3eb; border: 1px solid #e8ddc8; border-radius: 8px; padding: 8px; }
+  #exportHolder .exd-ctag { font-size: 11px; color: #a8988a; display: block; margin-bottom: 2px; }
+  #exportHolder .exd-ctxt { font-size: 12px; color: #5c4a3d; }
+
+  /* 封面 */
+  .cover-img { width: 100%; height: 100%; object-fit: cover; }
+  .cover-emoji { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(92,74,61,.35); }
+  .modal-overlay.show { display: flex; animation: fadeIn .25s ease; }
+  .modal { width: min(860px, 94vw); max-height: 90vh; overflow-y: auto; animation: slideUp .35s cubic-bezier(.16,1,.3,1); }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+  /* 弃番评论区出现时的平滑入场 */
+  @keyframes dropIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .drop-in { animation: dropIn .24s ease both; }
+  @keyframes floatY { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes confetti-fall { to { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
+
+  .star { cursor: pointer; font-size: 26px; color: #d9cbb4; transition: all .2s ease; }
+  .star.active { color: var(--warn); }
+  .star:hover { transform: scale(1.15); }
+  .star.half { color: transparent; background: linear-gradient(90deg, var(--warn) 50%, #d9cbb4 50%); -webkit-background-clip: text; background-clip: text; }
+  .half-star { display: inline-block; color: transparent; background: linear-gradient(90deg, currentColor 50%, #d9cbb4 50%); -webkit-background-clip: text; background-clip: text; }
+  .star-hint { color: #c8a25c; font-weight: 800; font-size: 15px; margin-left: 10px; align-self: center; white-space: nowrap; text-shadow: 0 0 10px rgba(192,154,91,.35); }
+
+  .confetti { position: fixed; top: -20px; width: 10px; height: 18px; z-index: 300; pointer-events: none; animation: confetti-fall 3s ease-in forwards; }
+
+  .toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .toast { padding: 12px 22px; border-radius: 10px; background: #fffdf8; border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; color: var(--text); animation: slideUp .3s ease; }
+  .toast.error { border-color: rgba(176,106,90,.5); color: var(--err); }
+  .toast.ok { border-color: rgba(125,143,105,.5); color: var(--ok); }
+
+  .ep-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--primary-soft); border: 1px solid var(--border); }
+  .ep-row.checked { border-color: rgba(125,143,105,.4); background: rgba(125,143,105,.08); }
+  .ep-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #d9cbb4; cursor: pointer; display: flex; align-items: center; justify-content: center; color: transparent; transition: all .2s; flex: none; background: #fffdf8; }
+  .ep-check.on { background: #a5b28a; border-color: transparent; color: #fff; }
+
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
+
+  /* 一图流分享卡片 */
+  #shareCard {
+    width: 480px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px;
+    position: relative; overflow: hidden; font-family: inherit; color: var(--text);
+  }
+  #shareCard .cover-big { width: 200px; aspect-ratio: 4/5; margin: 0 auto; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 72px; }
+  #shareCard h2 { font-size: 22px; margin-top: 14px; }
+  #shareCard .meta { font-size: 12px; color: var(--muted); margin: 6px 0 12px; }
+  #shareCard .share-desc { font-size: 12px; line-height: 1.7; color: #7a6857; margin: 10px 0; }
+  #shareCard .share-staff { font-size: 11px; color: #8a7766; line-height: 1.6; margin-bottom: 12px; }
+  #shareCard .share-staff b { color: #5c4a3d; }
+  #shareCard .share-section { background: #efe7d9; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  #shareCard .share-section-title { font-size: 13px; font-weight: 700; color: #5c4a3d; margin-bottom: 8px; }
+  #shareCard .share-score-row { font-size: 12px; line-height: 1.7; margin-bottom: 6px; }
+  #shareCard .share-score-row:last-child { margin-bottom: 0; }
+  #shareCard .share-comment { color: #7a6857; }
+  #shareCard .share-ep-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  #shareCard .share-ep-chip { background: rgba(255,255,255,.45); border-radius: 8px; padding: 5px 8px; font-size: 11px; line-height: 1.5; }
+
+  /* 云状态指示 */
+  .cloud-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(125,143,105,.4); color: #5f7350; background: rgba(125,143,105,.08); }
+  .cloud-badge.off { border-color: var(--border); color: var(--muted); background: transparent; }
+
+  /* ===== Tailwind 颜色类覆盖（日式简约暖色系） ===== */
+  .text-gray-400 { color: var(--muted) !important; }
+  .text-gray-500 { color: #b3a08e !important; }
+  .text-gray-300 { color: #8a7766 !important; }
+  .text-gray-600 { color: #7a6857 !important; }
+  .text-indigo-400, .text-indigo-300 { color: #b0906a !important; }
+  .text-amber-400 { color: var(--warn) !important; }
+  .text-emerald-400 { color: var(--ok) !important; }
+  .text-white { color: #4a3a2e !important; }
+  .bg-white\/5 { background-color: var(--primary-soft) !important; }
+  .bg-white\/10 { background-color: #eae1d0 !important; }
+  .border-white\/10 { border-color: var(--border) !important; }
+  .border-indigo-500\/40 { border-color: rgba(194,174,140,.5) !important; }
+  .bg-emerald-400 { background-color: #a5b28a !important; }
+  .bg-indigo-400 { background-color: #c9b893 !important; }
+  .placeholder-gray-500::placeholder { color: #b3a08e !important; }
+  .hover\:bg-white\/10:hover { background-color: #eae1d0 !important; }
+  .focus\:border-indigo-500\/60:focus { border-color: #c2ae8c !important; }
+
+  /* ===== 移动端适配 ===== */
+  @media (max-width: 640px) {
+    .modal { width: 97vw; }
+    .pf-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+    .filter-panel { position: static; }
+
+    /* 导航精简：云状态只显示图标 */
+    .cloud-badge { padding: 3px 8px; font-size: 10px; }
+    .cloud-badge span { display: none; }
+    .nav .btn { padding: 8px 12px; font-size: 13px; }
+    .nav .font-bold.text-lg { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nav-hide-mobile { display: none; }
+    /* 导航防溢出：左侧文字可收缩截断，右侧按钮组不收缩 */
+    .nav > div > div:first-child { min-width: 0; }
+    .nav > div > div:last-child { flex: none; }
+
+    /* 统计框 6 列太窄，改为 3 列两行 */
+    .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-card .stat-num { font-size: 18px; }
+    .stat-card .stat-label { font-size: 9px; }
+
+    /* 各集勾选框触控加大 */
+    .ep-check { width: 26px; height: 26px; border-radius: 7px; }
+    .ep-grid { grid-template-columns: 1fr; gap: 8px; }
+
+    /* 触屏设备删除按钮常显，避免 hover 不可见 */
+    .pf-del { opacity: 1 !important; width: 34px; height: 34px; }
+    .pf-card:hover .pf-del { opacity: 1; }
+    .filter-btn { padding: 7px 13px; font-size: 13px; }
+    .filter-panel { padding: 12px; }
+    .filter-panel summary { padding: 6px 2px; }
+
+    /* 手机端排序栏更紧凑，横向滚动不溢出 */
+    .sort-row { gap: 6px !important; padding-bottom: 4px; }
+    .sort-row .btn { padding: 5px 9px; font-size: 12px; }
+    .sort-row .btn i { font-size: 11px; }
+
+    /* 分享卡片自适应，避免横向溢出 */
+    #shareCard { width: 100% !important; padding: 16px; }
+    #shareCard .cover-big { width: 150px; font-size: 56px; }
+    #shareCard h2 { font-size: 18px; }
+
+    /* 弹窗内边距紧凑 */
+    .modal.glass { padding: 18px 14px; }
+    .star-hint { font-size: 13px; margin-left: 6px; }
+
+    /* 触屏设备：卡片 hover 位移去掉 */
+    .pf-row:hover, .pf-card:hover { transform: none !important; }
+  }
+
+  /* 搜索与排序栏（不参与一图流导出） */
+  .sort-row { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .sort-row::-webkit-scrollbar { display: none; }
+  .sort-row .btn { white-space: nowrap; padding: 7px 11px; font-size: 13px; }
+  .sort-label { display: none; }
+
+  /* 隐藏项 */
+  .pf-card.pf-hidden-item, .pf-row.pf-hidden-item { opacity: .55; }
+  .pf-card.pf-hidden-item { border-style: dashed; }
+  .pf-hidden-badge { position: absolute; top: 8px; left: 8px; z-index: 5; background: rgba(60,45,35,.68); color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; }
+
+  /* 超小屏（<380px）进一步精简导航文字 */
+  @media (max-width: 380px) {
+    .nav .gradient-text { display: none; }
+    .nav .btn i { display: none; }
+  }
+
+  /* ============================================================
+     v3.0 评论框：加宽 + 输入自动换行 + 右下角点击放大/还原
+     （仅用于详情弹窗内的短评框，不含「单集短评」）
+     ============================================================ */
+  .cmt-wrap { position: relative; display: block; width: 100%; }
+  .cmt-wrap .cmt-area {
+    display: block; width: 100%; resize: vertical; overflow-y: auto;
+    min-height: 42px; max-height: 170px;
+    line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; padding-right: 34px;
+    transition: border-color .15s ease, max-height .15s ease;
+  }
+  .cmt-wrap.grown .cmt-area { max-height: 420px; }
+  .cmt-wrap .cmt-grow {
+    position: absolute; right: 6px; bottom: 6px; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 8px; cursor: pointer; z-index: 2;
+    background: rgba(92, 74, 61, .12); color: #8a7a6c; font-size: 11px; line-height: 1;
+  }
+  .cmt-wrap .cmt-grow:hover { background: rgba(92, 74, 61, .26); color: #4a3a2e; }
+
+  /* PV 链接按钮：后台填写 PV 链接后绿色可跳转，未填写灰色不可点 */
+  .pv-btn { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; margin-left: 6px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px; vertical-align: 1px; text-decoration: none; }
+  .pv-on { color: #3f9142; background: rgba(76,175,80,.12); border: 1px solid rgba(76,175,80,.45); cursor: pointer; }
+  .pv-on:hover { background: rgba(76,175,80,.24); }
+  .pv-off { color: #8a8f98; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<nav class="nav">
+  <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+    <a href="index.html" class="flex items-center gap-3 no-underline">
+      <div style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#d4c4a8,#c0a880);color:#4a3a2e;font-weight:900;font-size:20px;display:flex;align-items:center;justify-content:center">D</div>
+      <div>
+        <div class="font-bold text-lg leading-tight">DPCCA <span class="gradient-text">我的追番</span></div>
+        <div class="text-[11px] text-gray-400 leading-none nav-hide-mobile">追番 · 评分 · 一图流</div>
+      </div>
+    </a>
+    <div class="flex items-center gap-3">
+      <span class="hidden sm:inline-flex items-center" style="gap:3px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;line-height:14px;letter-spacing:.3px;color:#6b4f2a;background:linear-gradient(90deg,#eeddb8,#dcbf8a);border:1px solid #cdab72;white-space:nowrap" title="DPCCA · 测试版 v3.1（2026-09-15）">测试版 v3.1</span>
+      <span id="cloudBadge" class="cloud-badge off"><i class="fa-solid fa-cloud mr-1"></i><span>云端连接中</span></span>
+      <a href="index.html" class="btn"><i class="fa-solid fa-book-open"></i> 追番评分库</a>
+    </div>
+  </div>
+</nav>
+
+<!-- 主体：左账号 + 中清单 + 右筛选 -->
+<main class="max-w-7xl mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
+
+  <!-- 左侧：个人账号卡片 -->
+  <aside class="w-full md:w-56 flex-none order-1">
+    <div id="dpccaAccountPanel"></div>
+  </aside>
+
+  <!-- 中间：追番清单主体 -->
+  <div class="flex-1 min-w-0 order-2">
+    <!-- 页头操作条（不参与一图流导出） -->
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div>
+        <h1 class="text-2xl font-bold">我的追番清单</h1>
+        <p class="text-xs text-gray-400 mt-1">DPCCA 追番评分库 · <span id="todayStr"></span></p>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="seg">
+          <button id="viewSimple" class="on" onclick="setPfView('simple')"><i class="fa-solid fa-list mr-1"></i>简略</button>
+          <button id="viewDetail" onclick="setPfView('detail')"><i class="fa-solid fa-table-list mr-1"></i>详细</button>
+        </div>
+        <button class="btn btn-primary" onclick="openExportPreview()"><i class="fa-solid fa-image"></i> 导出一图流</button>
+      </div>
+    </div>
+
+    <!-- 搜索与排序栏（不参与一图流导出） -->
+    <div class="mb-4">
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
+        <input id="pfSearchInput" type="text"
+               class="w-full bg-white/5 border border-white/10 rounded-xl pl-11 pr-4 py-2.5 text-sm outline-none focus:border-indigo-500/60 transition-colors placeholder-gray-500"
+               placeholder="搜索番剧 / 标签……" oninput="pfSetSearch(this.value)">
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mb-4 sort-row">
+      <span class="text-xs text-gray-400 mr-1 sort-label"><i class="fa-solid fa-arrow-down-short-wide mr-1"></i>排序</span>
+      <button onclick="pfSetSort('open')" id="pfSortBtnOpen" class="btn btn-ghost sort-btn text-sm"><i class="fa-solid fa-arrow-down-short-wide mr-1"></i>开播前预期分</button>
+      <button onclick="pfSetSort('final')" id="pfSortBtnFinal" class="btn btn-ghost sort-btn text-sm"><i class="fa-solid fa-arrow-down-short-wide mr-1"></i>完结评分</button>
+      <button onclick="pfSetSort('ep')" id="pfSortBtnEp" class="btn btn-ghost sort-btn text-sm"><i class="fa-solid fa-arrow-down-short-wide mr-1"></i>各集平均分</button>
+      <button onclick="pfSetSort('date')" id="pfSortBtnDate" class="btn btn-ghost sort-btn text-sm"><i class="fa-solid fa-arrow-down-short-wide mr-1"></i>开播时间</button>
+      <span id="pfResultCount" class="text-xs text-gray-400 ml-auto"></span>
+    </div>
+
+    <!-- 一图流汇总卡片（页面主体，导出对象，不含筛选栏） -->
+    <div id="summaryCard">
+      <div class="pf-head">
+        <div>
+          <div class="pf-title">我的追番清单</div>
+          <div class="pf-sub">DPCCA 追番评分库 · <span class="pf-today"></span></div>
+          </div>
+          <div class="pf-emoji">📋</div>
+          </div>
+          <div id="pfStats"></div>
+          <div id="pfList"></div>
+          <div id="pfFoot"></div>
+          </div>
+
+    <!-- 加载中 -->
+    <div id="loading" class="empty"><div class="spinner"></div><div>正在加载追番记录…</div></div>
+  </div>
+
+  <!-- 右侧：筛选栏（移动端折叠为顶部面板） -->
+  <aside class="w-full md:w-56 flex-none order-3">
+    <details id="filterPanel" class="filter-panel" open>
+      <summary class="md:hidden cursor-pointer text-sm font-semibold flex items-center justify-between" style="color:#b3a08e">
+        <span><i class="fa-solid fa-sliders mr-1"></i>筛选</span>
+        <i class="fa-solid fa-chevron-down"></i>
+      </summary>
+      <div class="hidden md:block text-base font-extrabold mb-3" style="color:#4a3a2e"><i class="fa-solid fa-sliders mr-1" style="color:#b0906a"></i>筛选</div>
+      <div class="mt-2 md:mt-0">
+        <div id="pfFilterBar"></div>
+      </div>
+    </details>
+  </aside>
+</main>
+
+<!-- 详情弹窗 -->
+<div id="detailModal" class="modal-overlay">
+  <div class="modal glass p-6 relative">
+    <button onclick="closeDetail()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<!-- 一图流分享弹窗 -->
+<div id="shareModal" class="modal-overlay">
+  <div class="modal glass p-5 relative" style="width:min(540px,94vw)">
+    <button onclick="closeShare()" class="absolute right-3 top-3 w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div id="shareCard"></div>
+    <div class="mt-4 flex flex-wrap gap-3 justify-center">
+      <button class="btn btn-primary" id="shareSimpleBtn" onclick="setShareMode('simple')">简略版</button>
+      <button class="btn" id="shareDetailBtn" onclick="setShareMode('detail')">详细版</button>
+      <button class="btn btn-primary" onclick="downloadShare()"><i class="fa-solid fa-download"></i> 下载</button>
+      <button class="btn" onclick="closeShare()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除追番记录确认弹窗 -->
+<div id="confirmRemoveModal" class="modal-overlay">
+  <div class="modal glass p-6 relative" style="width:min(420px,92vw)">
+    <h3 class="text-lg font-bold mb-2"><i class="fa-solid fa-trash-can mr-2" style="color:#d9534f"></i>确认删除</h3>
+    <p id="confirmRemoveText" class="text-sm" style="color:#a8988a;line-height:1.7;margin-bottom:18px"></p>
+    <div class="flex gap-3 justify-end">
+      <button class="btn" onclick="closeConfirmRemove()">取消</button>
+      <button class="pf-del-btn" onclick="doRemoveAnime()"><i class="fa-solid fa-trash-can"></i> 确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 一图流导出中弹窗 -->
+<div id="exportLoadingModal" class="modal-overlay">
+  <div class="modal glass p-6 text-center" style="width:min(320px,86vw)">
+    <div class="spinner" style="width:44px;height:44px;margin:0 auto 16px"></div>
+    <h3 class="text-lg font-bold mb-2"><i class="fa-solid fa-wand-magic-sparkles mr-2" style="color:#c09a5b"></i>正在导出</h3>
+    <p class="text-sm" style="color:#8a7a6a">正在生成一图流图片，请稍候，<br>导出完成前请勿刷新页面。</p>
+  </div>
+</div>
+
+<!-- 一图流导出预览弹窗 -->
+<div id="exportPreviewModal" class="modal-overlay">
+  <div class="modal glass p-5 relative" style="width:min(560px,94vw)">
+    <button onclick="closeExportPreview()" class="absolute right-3 top-3 w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <h3 class="text-lg font-bold mb-3"><i class="fa-solid fa-image mr-2" style="color:#c09a5b"></i>一图流预览</h3>
+    <div id="exportPreviewImg" style="text-align:center;max-height:60vh;overflow:auto;border-radius:10px"></div>
+    <div class="mt-4 flex gap-3 justify-center">
+      <button class="btn btn-primary" onclick="downloadSummary()"><i class="fa-solid fa-download"></i> 下载一图流</button>
+      <button class="btn" onclick="closeExportPreview()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 完结撒花弹窗 -->
+<div id="confettiModal" class="modal-overlay">
+  <div class="modal glass p-8 text-center relative" style="width:min(420px,92vw)">
+    <div id="confettiLayer"></div>
+    <div class="text-6xl mb-4" style="animation:floatY 2s ease-in-out infinite">🎉</div>
+    <h2 class="text-2xl font-bold gradient-text mb-2">完结撒花！</h2>
+    <p class="text-gray-400 mb-6">全部集数已看完，本番已自动标记为「已看完」</p>
+    <button class="btn btn-primary mx-auto" onclick="closeConfetti()"><i class="fa-solid fa-check"></i> 好耶！</button>
+  </div>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script>
+/* ============================================================
+ * 数据层 dataProvider —— 业务层与存储完全解耦
+ * USE_CLOUD = true 时使用腾讯云开发文档型数据库（需登录态）
+ * ============================================================ */
+const dataProvider = {
+  USE_CLOUD: true,
+  ENV_ID: "dpcca-wiki-d7g0dl19y23cd30f3",
+  _ls: {
+    get(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
+    set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} },
+    del(key) { try { localStorage.removeItem(key); } catch (e) {} },
+  },
+  /* 本地存储实现 */
+  _local: {
+    loadUserData() { return dataProvider._ls.get("dpcca_user_data", {}); },
+    saveUserData(data) { dataProvider._ls.set("dpcca_user_data", data); return true; },
+    initAnimeData() { return ANIME_LIBRARY; },
+    loadAnimeLibrary() { return ANIME_LIBRARY; },
+  },
+  /* 云端实现（腾讯云开发文档型数据库） */
+  _cloud: {
+    _app: null, _auth: null, _db: null,
+    async _getDB() {
+      if (this._db) return this._db;
+      if (typeof cloudbase === "undefined") throw new Error("未引入 @cloudbase/js-sdk，请先引入 SDK");
+      this._app = cloudbase.init({ env: dataProvider.ENV_ID });
+      this._auth = this._app.auth({ persistence: "local" });
+      if (!this._auth.hasLoginState()) {
+        await this._auth.anonymousAuthProvider().signIn();
+      }
+      this._db = this._app.database();
+      return this._db;
+    },
+    async _uid() {
+      await this._getDB();
+      return (this._auth.currentUser && this._auth.currentUser.uid) || "";
+    },
+    /* 用户追番文档统一收口到「身份文档」：以 where({_openid}) 命中的文档为唯一读写目标
+     * （update 优先、add 兜底）。账号（D 编号 uid）与游客（匿名 uid）各自独立。
+     * 说明：不再创建 doc("u"+uid) 主文档——此前主文档与身份文档并存，
+     * 保存与读取目标不一致，是“保存成功、刷新回弹”的根因。 */
+    _errText(e) {
+      if (!e) return "";
+      return String(e.errMsg || e.message || e.errCode || e.code || "").slice(0, 120);
+    },
+    /* 解析 doc().get() 返回值：兼容 { data: 文档 } 与 { data: [文档] } 两种形态 */
+    _docOf(res) {
+      if (!res) return null;
+      let d = res.data;
+      if (Array.isArray(d)) d = d[0] || null;
+      return (d && typeof d === "object") ? d : null;
+    },
+    async loadUserData() {
+      const db = await this._getDB();
+      const col = db.collection("user_anime");
+      // 唯一收口：身份文档 = where({_openid}) 命中的文档（账号 uid / 游客匿名 uid 的
+      // _openid 均由服务端注入；占位符 {openid} 展开为当前调用者 openid，与安全规则对齐）。
+      // 优先取含非空 data 的文档，兼容早期 add 产生的多条记录。
+      try {
+        const res = await col.where({ _openid: "{openid}" }).get();
+        const list = (res && res.data) || [];
+        const item = list.find(x => x && x.data && typeof x.data === "object" && Object.keys(x.data).length) || list[0];
+        return (item && item.data) || {};
+      } catch (e) { return {}; }
+    },
+    async saveUserData(data) {
+      const db = await this._getDB();
+      const col = db.collection("user_anime");
+      const uid = (this._auth.currentUser && this._auth.currentUser.uid) || "";
+      // 写入前做深拷贝快照：防止 await 期间 userData 被后续操作修改而写进中间态
+      let payload;
+      try { payload = JSON.parse(JSON.stringify(data)); }
+      catch (e) { payload = data; }
+      const errors = [];
+      const isEmpty = !payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length === 0;
+      // 1) 命中身份文档则定点操作（与 loadUserData 同源，保证读写目标一致）：
+      //    - 有数据：doc().set 整篇覆盖。注意：update 是“嵌套合并”语义，
+      //      缺失的 key 不会被移除——正是“删除提示成功、刷新回弹”的根因，
+      //      set 才能让删除真实生效。
+      //    - 数据为空（删光了）：直接移除身份文档（remove 已实测放行）。
+      try {
+        const res = await col.where({ _openid: "{openid}" }).get();
+        const list = (res && res.data) || [];
+        const item = list.find(x => x && x.data && typeof x.data === "object" && Object.keys(x.data).length) || list[0];
+        if (item && item._id) {
+          if (isEmpty) {
+            const r = await col.doc(item._id).remove();
+            // 关键防御：Web SDK 对 remove 被安全规则拒绝时不抛异常，
+            // 而是 resolve 错误对象。若不校验，清空会被误判为成功。
+            if (r && (r.code || r.errCode || r.errMsg || r.message)) {
+              throw new Error("云端拒绝清空(" + (r.code || r.errCode || r.errMsg) + "): " + this._errText(r));
+            }
+            return true;
+          }
+          const u = await col.doc(item._id).set({ data: payload, userId: uid });
+          // 关键防御：Web SDK 对写操作被安全规则拒绝时不抛异常，
+          // 而是正常 resolve 一个 { code: "DATABASE_PERMISSION_DENIED", message: ... } 的错误对象。
+          if (u && (u.code || u.errCode || u.errMsg || u.message)) {
+            throw new Error("云端拒绝保存(" + (u.code || u.errCode || u.errMsg) + "): " + this._errText(u));
+          }
+          return true;
+        }
+      } catch (e) { errors.push("身份文档写入失败: " + this._errText(e)); }
+      // 2) 无身份文档：非空数据 add 创建（服务端自动注入 _openid = 当前 openid）；空数据无事可做
+      if (isEmpty) return true;
+      try {
+        const a = await col.add({ data: payload, userId: uid });
+        if (a && (a.code || a.errCode || a.errMsg || a.message)) {
+          throw new Error("云端拒绝创建(" + (a.code || a.errCode || a.errMsg) + "): " + this._errText(a));
+        }
+        if (!a || !a.id) throw new Error("云端创建失败");
+        return true;
+      } catch (e) { errors.push("云端创建失败: " + this._errText(e)); }
+      throw new Error(errors.join(" | ") || "云端保存失败");
+    },
+    /* 兼容历史数据：早期写入可能把番剧包在 data 字段里，统一解包为扁平结构 */
+    _normalizeAnime(list) {
+      return list.map(r => {
+        if (r && typeof r === "object" && r.data && typeof r.data === "object" && !r.title && r.data.title) {
+          return Object.assign({ _id: r._id }, r.data);
+        }
+        return r;
+      });
+    },
+    /* 分页拉取全量番剧（Web SDK 单次 get() 最多返回 100 条，limit 最大 1000） */
+    async _fetchAllAnime() {
+      const db = await this._getDB();
+      const PAGE = 1000;
+      let skip = 0;
+      let all = [];
+      while (true) {
+        const res = await db.collection("anime_library").orderBy("id", "asc").skip(skip).limit(PAGE).get();
+        const list = res.data || [];
+        all = all.concat(list);
+        if (list.length < PAGE) break;
+        skip += PAGE;
+      }
+      return all;
+    },
+    async initAnimeData() {
+      const list = this._normalizeAnime(await this._fetchAllAnime());
+      if (list.length) return list;
+      throw new Error("云端番剧库为空");
+    },
+    async loadAnimeLibrary() {
+      return this._normalizeAnime(await this._fetchAllAnime());
+    },
+  },
+  /* 统一入口：根据 USE_CLOUD 路由 */
+  async loadUserData() { return this.USE_CLOUD ? this._cloud.loadUserData() : this._local.loadUserData(); },
+  async saveUserData(data) { return this.USE_CLOUD ? this._cloud.saveUserData(data) : this._local.saveUserData(data); },
+  async initAnimeData() { return this.USE_CLOUD ? this._cloud.initAnimeData() : this._local.initAnimeData(); },
+  async loadAnimeLibrary() { return this.USE_CLOUD ? this._cloud.loadAnimeLibrary() : this._local.loadAnimeLibrary(); },
+};
+
+/* ============================================================
+ * 公共番剧库（本地兜底，与云端 anime_library 结构 1:1）
+ * ============================================================ */
+const ANIME_LIBRARY = [
+  { id:"a001", title:"异国日记", source:"漫画改", quarter:1, year:2026, month:1, day:2, episodes:12, tags:["科幻","冒险"], emoji:"🚀", gradient:["#14245e","#3a2b5f"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a001.jpg", desc:"一艘被遗忘的殖民舰，一群在星海间漂流的人类。当导航系统响起最后一声警报，领航员少女决定违抗中央电脑，向着记忆里那颗蓝色星球全速前进——在耗尽氧气之前。", staff:{ original:"藤本千寻", director:"北岛翔太", writer:"雨宫绫", music:"沢井一郎", studio:"Stellar Works", cast:["早见纱织","小野贤章","悠木碧","神谷浩史"] } },
+  { id:"a002", title:"剑与纸鸢", source:"小说改", quarter:1, year:2026, month:1, day:8, episodes:24, tags:["国风","热血"], emoji:"⚔️", gradient:["#3a2b1f","#5f2b1f"], desc:"山河破碎的乱世，少年剑客陆离从废墟中捡回一只会飞的机关纸鸢。纸鸢的翅膀上刻着一句古老的预言，而预言指向的，正是他失去的故乡。", staff:{ original:"墨白", director:"林晚舟", writer:"沈青梧", music:"高梨康治", studio:"九州动画", cast:["杨天翔","苏尚卿","乔诗语","边江"] } },
+  { id:"a003", title:"雾都夜航", source:"小说改", quarter:1, year:2026, month:1, day:15, episodes:10, tags:["悬疑","都市"], emoji:"🌫️", gradient:["#1f2f4f","#2b1f3a"], desc:"永雾之城中的神秘客船，每晚准时出现在第九码头。船上载着的是逝者的记忆，而侦探少女的委托人，恰恰是一具会开口说话的尸体。", staff:{ original:"雾岛シン", director:"泽井良介", writer:"高桥留见", music:"川井宪次", studio:"Misty Lane", cast:["花泽香菜","中村悠一","早见纱织","钉宫理惠"] } },
+  { id:"a004", title:"天穹之下", source:"原创", quarter:1, year:2026, month:1, day:22, episodes:13, tags:["机甲","战争"], emoji:"🛡️", gradient:["#2b1f4f","#14245e"], desc:"天空之城覆灭后，幸存者驾驶着旧时代的机甲，在云海残骸间守护最后的故土。少年驾驶员米迦勒只想知道：那天坠落的天空，究竟是被谁击碎的。", staff:{ original:"高桥渡", director:"板野一郎", writer:"吉野弘幸", music:"鹭巢诗郎", studio:"Nebula Arms", cast:["梶裕贵","泽城美雪","铃木达央","茅野爱衣"] } },
+  { id:"a005", title:"极昼之光", source:"小说改", quarter:1, year:2026, month:1, day:29, episodes:12, tags:["奇幻","治愈"], emoji:"☀️", gradient:["#4f3a1f","#1f4f3a"], desc:"极北之地，一年中有半年是永昼。灯塔看守人的孙女在漫漫长昼里遇见了一个来自永夜之境的少年，她决定用整整一个夏天的光，为他点亮回家的路。", staff:{ original:"森见登美彦", director:"长井龙雪", writer:"冈田麿里", music:"菅野洋子", studio:"Daylight", cast:["水濑祈","内山昂辉","佐仓绫音","小野大辅"] } },
+  { id:"a101", title:"樱色回信", source:"原创", quarter:4, year:2026, month:4, day:3, episodes:12, tags:["恋爱","校园"], emoji:"🌸", gradient:["#5f2b3a","#3a2b5f"], desc:"高二那年春天，女主在旧书里翻出一封没有寄出的情书，收件人却是十年后的自己。为了完成这封回信，她决定认真活过这个樱花纷飞的春天。", staff:{ original:"新海汐", director:"片山一良", writer:"今井文也", music:"天门", studio:"Petit Sakura", cast:["早见纱织","梶裕贵","户松遥","石川界人"] } },
+  { id:"a102", title:"铁与茉莉", source:"漫画改", quarter:4, year:2026, month:4, day:10, episodes:26, tags:["热血","体育"], emoji:"🥊", gradient:["#2b3a1f","#3a2b1f"], desc:"茉莉与铁拳——被人嘲笑'花拳绣腿'的少女拳手，用一朵茉莉作为拳击台的标记。她只做一件事：把所有看不起她的人，一个个打趴下。", staff:{ original:"井上雄彦", director:"宫地昌幸", writer:"森田真由", music:"和田薰", studio:"Iron Petal", cast:["小松未可子","山下大辉","花江夏树","泽城美雪"] } },
+  { id:"a103", title:"夜行列车", source:"漫画改", quarter:4, year:2026, month:4, day:17, episodes:11, tags:["奇幻","公路"], emoji:"🚂", gradient:["#1f1f4f","#2b3a5f"], desc:"午夜零点，通往'过去'的夜行列车从不晚点。乘务员少女每天在月台上检票，直到那天，她遇见了那张写着妈妈名字的旧车票。", staff:{ original:"浅野一二O", director:"谷口悟朗", writer:"中岛かずき", music:"泽野弘之", studio:"Railway Dream", cast:["能登麻美子","福山润","坂本真绫","石田彰"] } },
+  { id:"a104", title:"云端咖啡屋", source:"漫画改", quarter:4, year:2026, month:4, day:24, episodes:12, tags:["日常","美食"], emoji:"☕", gradient:["#4f3a2b","#3a1f2b"], desc:"开在云层之上的咖啡屋，老板用一杯手冲咖啡交换顾客的一个烦恼。今天的第一位客人，是来自北方的、想忘记一切的少年。", staff:{ original:"荒川弘", director:"石原立也", writer:"吉田玲子", music:"大岛ミチル", studio:"Cloud Beans", cast:["茅野爱衣","樱井孝宏","花泽香菜","中井和哉"] } },
+  { id:"a105", title:"独角戏", source:"原创", quarter:4, year:2026, month:4, day:30, episodes:13, tags:["悬疑","心理"], emoji:"🎭", gradient:["#2b1f2b","#1f2b4f"], desc:"剧场新星步美发现，自己每次演出时，观众席最后一排总坐着同一个戴着面具的人。面具下的脸，竟然和她一模一样。", staff:{ original:"今敏遗风", director:"汤浅政明", writer:"脚本家三池", music:"椎名豪", studio:"Mirror Stage", cast:["悠木碧","大冢明夫","能登麻美子","关智一"] } },
+  { id:"a301", title:"金秋物语", source:"漫画改", quarter:10, year:2026, month:10, day:1, episodes:13, tags:["恋爱","治愈"], emoji:"🍂", gradient:["#4f2b1f","#3a4f1f"], desc:"红叶铺满小径的秋天，图书管理员与常来借书的漫画家，因为一本错放的推理小说开始交谈。他们约定，在最后一枚红叶落下之前读完整个四季的故事。", staff:{ original:"高屋奈月", director:"小林宽", writer:"木村畅", music:"桥本由香利", studio:"Autumn Tale", cast:["早见纱织","中村悠一","佐藤利奈","铃村健一"] } },
+  { id:"a302", title:"蒸汽侦探社", source:"小说改", quarter:10, year:2026, month:10, day:8, episodes:24, tags:["蒸汽朋克","推理"], emoji:"🕵️", gradient:["#2b1f1f","#4f3a1f"], desc:"维多利亚式雾都，机械改造过的侦探少女与退役的蒸汽机器人搭档。每个案件背后，都藏着一句被齿轮碾碎的证词。", staff:{ original:"青崎有吾", director:"神志那弘志", writer:"藤咲淳一", music:"和田薰", studio:"Piston Works", cast:["水树奈奈","诹访部顺一","泽城美雪","三木真一郎"] } },
+  { id:"a303", title:"月蚀之约", source:"漫画改", quarter:10, year:2026, month:10, day:15, episodes:12, tags:["奇幻","战斗"], emoji:"🌙", gradient:["#1f1f3a","#2b1f4f"], desc:"每逢月蚀，结界薄弱，妖物入侵人间。世代守护结界的'月之巫女'却只是个怕黑的高中生。她与半妖少年立下约定：一起撑过下一个满月。", staff:{ original:"绿川幸", director:"长沼范裕", writer:"冈田麿里", music:"吉森信", studio:"Eclipse", cast:["鬼头明里","内山昂辉","户松遥","日野聪"] } },
+  { id:"a304", title:"银龙工房", source:"漫画改", quarter:10, year:2026, month:10, day:22, episodes:26, tags:["热血","战斗"], emoji:"🐉", gradient:["#1f3a2b","#1f1f4f"], desc:"濒临倒闭的铁匠铺，最后一个学徒是能听懂龙语的红发少年。当沉睡百年的银龙在矿山苏醒，他的锤子第一次燃起了火焰。", staff:{ original:"真岛浩", director:"阿部记之", writer:"十川诚志", music:"高梨康治", studio:"Forge Dragon", cast:["松冈祯丞","花泽香菜","小野友树","伊濑茉莉也"] } },
+  { id:"a305", title:"倒数计时", source:"小说改", quarter:10, year:2026, month:10, day:29, episodes:12, tags:["悬疑","科幻"], emoji:"⏳", gradient:["#3a1f1f","#1f2b4f"], desc:"世界末日前的第 100 天，每个人的手腕上都出现了一个不可见的倒计时。唯独女主没有——她成了唯一能看到'末日'的人。", staff:{ original:"贵志佑介", director:"浅野恭司", writer:"濑古浩司", music:"川井宪次", studio:"Last Hour", cast:["雨宫天","石川界人","佐仓绫音","樱井孝宏"] } },
+  { id:"a401", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:1, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a401.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a402", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:2, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a402.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a403", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:3, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a403.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a404", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:4, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a404.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a405", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:5, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a405.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a406", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:6, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a406.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a407", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:7, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a407.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a408", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:8, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a408.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a409", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:9, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a409.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a410", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:10, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a410.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a411", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:11, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a411.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a412", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:12, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a412.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a413", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:13, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a413.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a414", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:14, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a414.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a415", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:15, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a415.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a416", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:16, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a416.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a417", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:17, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a417.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a418", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:18, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a418.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a419", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:19, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a419.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a420", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:20, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a420.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a421", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:21, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a421.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a422", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:22, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a422.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a423", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:23, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a423.png", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a424", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:24, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a424.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a425", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:25, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a425.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a426", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:26, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a426.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+  { id:"a427", title:"新番剧（名称待补充）", source:"待定", quarter:7, year:2026, month:7, day:27, episodes:12, tags:["待定"], emoji:"🎬", gradient:["#2b1f4f","#14245e"], cover:"https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/covers/a427.jpg", desc:"待补充简介。", staff:{ original:"待定", director:"待定", writer:"待定", music:"待定", studio:"待定", cast:[] } },
+];
+
+/* ============================================================
+ * 状态
+ * ============================================================ */
+let library = ANIME_LIBRARY;
+let userData = {};
+let currentAnime = null;
+let detailEditing = "";   // 详情弹窗开播/完结评分当前编辑态："" | "open" | "final"
+let detailScoreOpen = 0;   // 开播前预期分（草稿）
+let detailCommentOpen = "";
+let detailScoreFinal = 0;  // 完结评分（草稿）
+let detailCommentFinal = "";
+let detailCommentAbandoned = "";  // 弃番评论（草稿）
+let currentEp = 1;         // 当前操作的单集
+let epScoreDraft = 0;
+let epCommentDraft = "";
+let confettiShown = new Set();
+/* v3.0：我的追番清单筛选项全部改为多选（空集合 = 全部，即不限该项） */
+let pfStatuses = new Set();   // 状态：追番中 / 已看完 / 已弃番 / 已评分（未标记由其它项组合体现）
+let pfSources = new Set();    // 来源
+let pfTypes = new Set();      // 类型：TV动画 / 剧场版 / OVA
+let pfYears = new Set();      // 年份
+let pfMonths = new Set();     // 月份
+let pfQuarters = new Set();   // 季度：与后台一致，1=1月（冬）/ 2=4月（春）/ 3=7月（夏）/ 4=10月（秋）
+let pfSearch = "";         // 搜索关键词
+let pfSort = "open";       // open=开播前预期分 / final=完结评分 / ep=各集平均分 / date=开播时间
+let pfSortDir = "desc";    // desc=从高到低 / asc=从低到高
+let pfShowHidden = false;  // 是否显示已隐藏项
+/* 恢复排序偏好（localStorage 非敏感 UI 偏好）；历史遗留的 custom（手动排序）偏好忽略 */
+try {
+  const pref = JSON.parse(localStorage.getItem("dpcca_pf_sort") || "{}");
+  if (pref.sort && pref.sort !== "custom") pfSort = pref.sort;
+  if (pref.dir === "asc" || pref.dir === "desc") pfSortDir = pref.dir;
+} catch (e) {}
+let pfView = "simple";     // simple=简略 / detail=详细
+let pfExpanded = new Set(); // 详细视图下已展开的番剧 id
+let detailList = [];   // 详情导航用的当前筛选清单（{a,d} 列表）
+let detailIndex = -1;  // 当前详情番剧在清单中的位置
+let removeTargetId = null;
+let exportCanvas = null;
+let exportDataUrl = null;
+let exporting = false;
+
+const $ = (id) => document.getElementById(id);
+const QUARTERS = { 1: "1月新番", 4: "4月新番", 7: "7月新番", 10: "10月新番" };
+const MONTH_LABEL = (m) => (m ? `${m}月` : "");
+const monthOf = (a) => a.month || a.quarter || 1;
+const dayOf = (a) => a.day || 1;
+/* 季度（v3.0）：口径与后台 admin.html 完全一致（1=1月冬 / 2=4月春 / 3=7月夏 / 4=10月秋），
+   直接对应数据库 anime_library 的 quarter 字段；存量数据里有部分记录的 quarter 仍写成月份值（如 7 / 10），
+   统一按 1-3 / 4-6 / 7-9 / 10-12 折回季度序号后再比较，避免这部分番剧筛不出来 */
+const QUARTER_LABEL = { 1: "1月（冬）", 2: "4月（春）", 3: "7月（夏）", 4: "10月（秋）" };
+const normQuarter = (v) => {
+  const n = Number(v);
+  if (!n || n < 1) return 0;
+  return n <= 4 ? n : Math.min(4, Math.ceil(n / 3));
+};
+const quarterOf = (a) => normQuarter(a.quarter) || normQuarter(monthOf(a));
+const dateStr = (a) => `${monthOf(a)}月${String(dayOf(a)).padStart(2, "0")}日·${a.year || ""}`;
+/* 每集放送日期：默认首播日 + (集号-1)*7 天；a.epDates[集号] 有值时优先（后台停播/休播调整） */
+const epAirDate = (a, ep) => {
+  const ov = a && a.epDates && a.epDates[ep];
+  if (ov) return ov;
+  const base = new Date((a.year || 2026), (monthOf(a) || 1) - 1, (dayOf(a) || 1) + (ep - 1) * 7);
+  const y = base.getFullYear(), m = base.getMonth() + 1, d = base.getDate();
+  return (y !== (a.year || 2026) ? y + "年" : "") + `${m}月${d}日`;
+};
+/* 更新星期：1-7 对应周一~周日，缺省统一为周一（1），管理员后台可修改 */
+const WEEK_LABELS = { 1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日" };
+const weekOf = (a) => Number(a.week) || 1;
+const weekStr = (a) => WEEK_LABELS[weekOf(a)] || "周一";
+
+function epAvgOf(ud, a) {
+  const epScores = (ud && ud.episodes && ud.episodes[a.id] && ud.episodes[a.id].epScores) || {};
+  const vals = Object.values(epScores).map(e => e && e.score).filter(Boolean);
+  if (!vals.length) return null;
+  return (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1);
+}
+const YEARS = [0, 2021, 2022, 2023, 2024, 2025, 2026];
+const SOURCES = ["原创", "漫画改", "游戏改", "小说改", "动画改", "影视改"];
+const sourceOf = (a) => a.source || "待定";
+/* 类型（v2.0 新增）：TV动画 / 剧场版 / OVA。
+ * 存量数据没有 type 字段，一律兜底视为 TV 动画；后续导入数据默认 tv。 */
+const TYPES = [
+  { v: "tv", label: "TV动画" },
+  { v: "movie", label: "剧场版" },
+  { v: "ova", label: "OVA" },
+];
+const typeOf = (a) => (a && a.type ? String(a.type) : "tv");
+const typeLabelOf = (a) => {
+  const k = typeOf(a);
+  const hit = TYPES.find(t => t.v === k);
+  return hit ? hit.label : k;
+};
+
+/* 柔和化渐变：与米色背景混合，避免鲜艳色块（缺字段时兜底默认色） */
+function softGradient(c1, c2) {
+  if (!c1 || !String(c1).startsWith("#")) c1 = "#8b7355";
+  if (!c2 || !String(c2).startsWith("#")) c2 = "#b5a585";
+  const mix = (hex, f) => {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.round(((n >> 16) & 255) * (1 - f) + 245 * f);
+    const g = Math.round(((n >> 8) & 255) * (1 - f) + 240 * f);
+    const b = Math.round((n & 255) * (1 - f) + 230 * f);
+    return `rgb(${r},${g},${b})`;
+  };
+  return `linear-gradient(135deg, ${mix(c1, .72)}, ${mix(c2, .78)})`;
+}
+
+/* 封面渲染：有 cover 图片显示图片，无图降级为 emoji + 渐变 */
+function coverHTML(a, size = "56px") {
+  const e = a && a.emoji ? a.emoji : "❓";
+  if (a && a.cover) {
+    return `<img src="${a.cover}" alt="${a.title || ""}" class="cover-img" loading="lazy" onerror="this.outerHTML='<div class=&quot;cover-emoji&quot; style=&quot;background:${softGradient(a.gradient[0], a.gradient[1])};font-size:${size}&quot;>${e}</div>'">`;
+  }
+  return `<div class="cover-emoji" style="background:${softGradient(a.gradient[0], a.gradient[1])};font-size:${size}">${e}</div>`;
+}
+
+/* 列表小图标：图片或 emoji（size 为边长像素） */
+function coverThumbHTML(a, size = 32) {
+  const e = a && a.emoji ? a.emoji : "❓";
+  const style = `width:${size}px;height:${size}px;border-radius:8px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(size * .55)}px;vertical-align:middle;overflow:hidden`;
+  if (a && a.cover) return `<img src="${a.cover}" alt="${a.title || ""}" style="${style};object-fit:cover" loading="lazy" onerror="this.remove()">`;
+  return `<span style="${style};background:${softGradient(a.gradient[0], a.gradient[1])}">${e}</span>`;
+}
+
+/* ============================================================
+ * Toast
+ * ============================================================ */
+function toast(msg, isErr = false) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " error" : " ok");
+  el.innerHTML = (isErr ? '<i class="fa-solid fa-circle-exclamation mr-2"></i>' : '<i class="fa-solid fa-circle-check mr-2"></i>') + msg;
+  $("toastContainer").appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 300); }, 2600);
+}
+
+/* ============================================================
+ * 云状态指示
+ * ============================================================ */
+async function updateCloudBadge() {
+  const badge = $("cloudBadge");
+  const label = badge.querySelector("span");
+  try {
+    if (dataProvider.USE_CLOUD) {
+      await dataProvider._cloud._getDB();
+      badge.classList.remove("off");
+      label.textContent = "云端已连接";
+    } else {
+      badge.classList.add("off");
+      label.textContent = "本地存储";
+    }
+  } catch (e) {
+    badge.classList.add("off");
+    label.textContent = "云端不可用";
+  }
+}
+
+/* ============================================================
+ * 评分计算
+ * ============================================================ */
+function fmtScore(v) { v = Math.round((v || 0) * 2) / 2; return v % 1 ? v.toFixed(1) : String(v); }
+function fmtStars(v) {
+  v = Math.max(0, Math.round((v || 0) * 2) / 2);
+  let h = "";
+  for (let i = 0; i < Math.floor(v); i++) h += "★";
+  if (v % 1) h += `<span class="half-star">★</span>`;
+  return h;
+}
+
+/* 综合评分：开播前预期分与完结分取平均 */
+function calcAvg(s) {
+  if (!s) return null;
+  const open = s.open && s.open.score;
+  const fin = s.final && s.final.score;
+  if (open && fin) return fmtScore((open + fin) / 2);
+  return open ? fmtScore(open) : fin ? fmtScore(fin) : null;
+}
+
+/* 三个评分小标（与追番评分库一致：文字标签 + fa 图标） */
+function scoreBlocksHTML(d, a) {
+  const s = d.scores || {};
+  const avgEp = epAvgOf(d, a);
+  const parts = [];
+  if (s.open && s.open.score) parts.push(`<span class="score-chip" style="color:#c09a5b"><i class="fa-solid fa-flag-checkered mr-1"></i>开播前预期 ${fmtScore(s.open.score)}</span>`);
+  if (avgEp) parts.push(`<span class="score-chip" style="color:#8a9a6b"><i class="fa-solid fa-layer-group mr-1"></i>各集均 ${avgEp}</span>`);
+  if (s.final && s.final.score) parts.push(`<span class="score-chip" style="color:#5a7185"><i class="fa-solid fa-trophy mr-1"></i>完结 ${fmtScore(s.final.score)}</span>`);
+  return parts.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${parts.join("")}</div>` : "";
+}
+
+/* 参考完结分：开播前预期分×0.5 + 各集平均分×0.5 */
+function finalPreview(d, a) {
+  const s = d.scores || {};
+  const avgEp = epAvgOf(d, a);
+  if (s.open && s.open.score && avgEp) return fmtScore(s.open.score * 0.5 + Number(avgEp) * 0.5);
+  return null;
+}
+
+/* 详情页综合评分：与封面下方星星旁分数一致，取开播前预期分与完结分的平均值 */
+function overallScoreHTML(a) {
+  const ud = userData[a.id] || {};
+  const avg = calcAvg(ud.scores);
+  if (!avg) return "";
+  const s = ud.scores || {};
+  const hasOpen = !!(s.open && s.open.score);
+  const hasFinal = !!(s.final && s.final.score);
+  let formula = "";
+  if (hasOpen && hasFinal) {
+    formula = `（开播前预期 ${fmtScore(s.open.score)} 分 + 完结评分 ${fmtScore(s.final.score)} 分）÷ 2`;
+  } else if (hasOpen) {
+    formula = "仅填了开播前预期分，取该项";
+  } else if (hasFinal) {
+    formula = "仅填了完结评分，取该项";
+  }
+  return `
+    <div class="glass p-4 mb-4">
+      <div class="font-semibold mb-2"><i class="fa-solid fa-star mr-2 text-amber-400"></i>综合评分</div>
+      <div class="flex items-end gap-3 mb-2">
+        <span class="text-amber-400 text-xl leading-none">${fmtStars(Number(avg))}</span>
+        <span class="text-3xl font-extrabold leading-none" style="color:#c09a5b">${avg}<span class="text-sm font-normal text-gray-400 ml-1">分</span></span>
+      </div>
+      <div class="text-xs text-gray-500"><i class="fa-solid fa-calculator mr-1"></i>计算方法：${formula}</div>
+    </div>
+  `;
+}
+
+/* ============================================================
+ * 详情页
+ * ============================================================ */
+/* 制作阵容（动态岗位）：旧数据英文 key 转中文岗位名，支持任意自定义岗位 */
+const STAFF_LABELS = { original: "原作", director: "导演", writer: "编剧", music: "音乐", studio: "制作公司", cast: "声优" };
+/* 固定前排：原作、导演、制作公司优先展示，其余岗位保持原顺序 */
+const STAFF_PRIORITY = ["original", "director", "studio"];
+function staffHTML(a) {
+  const st = a.staff || {};
+  const entries = Object.entries(st).filter(([, v]) => Array.isArray(v) ? v.length : v !== undefined && v !== null && v !== "");
+  if (!entries.length) return "";
+  entries.sort((x, y) => {
+    const px = STAFF_PRIORITY.indexOf(x[0]);
+    const py = STAFF_PRIORITY.indexOf(y[0]);
+    return (px === -1 ? STAFF_PRIORITY.length : px) - (py === -1 ? STAFF_PRIORITY.length : py);
+  });
+  const blocks = entries.map(([k, v]) => {
+    const label = STAFF_LABELS[k] || k;
+    const val = Array.isArray(v) ? v.join(" / ") : String(v);
+    return `<div class="glass p-3"><div class="text-gray-500 mb-1">${label}</div><div>${val}</div></div>`;
+  }).join("");
+  return `<div class="text-xs mt-5">
+    <div class="text-gray-400 mb-1 font-semibold">制作阵容</div>
+    <div class="space-y-3">${blocks}</div>
+  </div>`;
+}
+/* PV 链接按钮：后台番剧编辑里填了「PV 链接」→ 绿色可点击跳转；没填 → 灰色占位 */
+function pvBtnHTML(a) {
+  const raw = String((a && a.pvUrl) || "").trim().replace(/[<>"'`\\]/g, "");
+  if (!raw) return `<span class="pv-btn pv-off" title="管理员暂未填写 PV 链接"><i class="fa-solid fa-clapperboard"></i>PV</span>`;
+  const url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+  return `<a class="pv-btn pv-on" href="${url}" target="_blank" rel="noopener noreferrer" title="观看 PV"><i class="fa-solid fa-clapperboard"></i>PV</a>`;
+}
+
+function openDetail(id) {
+  const a = library.find(x => x.id === id);
+  if (!a) return;
+  currentAnime = a;
+  // 记录当前筛选清单中的位置，供「上一部/下一部」导航使用（与列表同排序）
+  detailList = pfApplySort(pfFiltered(myRecordList()));
+  detailIndex = detailList.findIndex(r => r.a.id === id);
+  const ud = userData[a.id] || {};
+  detailScoreOpen = (ud.scores && ud.scores.open && ud.scores.open.score) || 0;
+  detailCommentOpen = (ud.scores && ud.scores.open && ud.scores.open.comment) || "";
+  detailScoreFinal = (ud.scores && ud.scores.final && ud.scores.final.score) || 0;
+  detailCommentFinal = (ud.scores && ud.scores.final && ud.scores.final.comment) || "";
+  detailEditing = "";
+  currentEp = 1; epScoreDraft = 0; epCommentDraft = "";
+  renderDetail();
+  $("detailModal").classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+
+function closeDetail() {
+  $("detailModal").classList.remove("show");
+  document.body.style.overflow = "";
+}
+
+/* 详情左右导航：按当前清单顺序切换上一部/下一部 */
+function prevDetail() {
+  const t = detailList[detailIndex - 1];
+  if (t) openDetail(t.a.id);
+}
+function nextDetail() {
+  const t = detailList[detailIndex + 1];
+  if (t) openDetail(t.a.id);
+}
+
+function starsHTML(score, onChange, hintId) {
+  let h = "";
+  for (let i = 1; i <= 10; i++) {
+    const full = score >= i;
+    const half = !full && score >= i - 0.5;
+    const cls = full ? "star active" : half ? "star half" : "star";
+    h += `<span class="${cls}" title="${half ? (i - 0.5) + " 分" : i + " 分"}" onmouseenter="previewScore(${half ? i - 0.5 : i}, '${hintId}')" onmouseleave="clearScorePreview('${hintId}')" onclick="${onChange}(${i})">★</span>`;
+  }
+  h += `<span id="${hintId}" class="star-hint">${score ? fmtScore(score) + " 分" : "未评分"}</span>`;
+  return h;
+}
+function previewScore(v, hintId) { const el = $(hintId); if (el) el.textContent = fmtScore(v) + " 分"; }
+function clearScorePreview(hintId) {
+  const el = $(hintId); if (!el) return;
+  const draft = { openScoreHint: detailScoreOpen, finalScoreHint: detailScoreFinal, epScoreHint: epScoreDraft }[hintId];
+  el.textContent = draft ? fmtScore(draft) + " 分" : "未评分";
+}
+
+function renderDetail() {
+  const a = currentAnime;
+  const ud = userData[a.id] || {};
+  const st = ud.status || "";
+  const s = ud.scores || {};
+  const watched = (ud.episodes && ud.episodes[a.id] && ud.episodes[a.id].watched) || [];
+  const epData = (ud.episodes && ud.episodes[a.id]) || {};
+  const allWatched = watched.length >= a.episodes;
+  const finalLocked = allWatched;
+
+  let eps = "";
+  for (let i = 1; i <= a.episodes; i++) {
+    const seen = watched.includes(i);
+    const epScore = epData.epScores && epData.epScores[i];
+    eps += `
+      <div class="ep-row ${seen ? "checked" : ""}">
+        <div class="ep-check ${seen ? "on" : ""}" onclick="toggleEp(${i})">${seen ? '<i class="fa-solid fa-check" style="font-size:12px"></i>' : ""}</div>
+        <span class="text-sm flex-none w-8">EP${i}</span>
+        <span class="text-[10px] text-gray-500 flex-none">${epAirDate(a, i)}</span>
+        ${seen ? `
+          <div class="flex-1 flex items-center gap-2 flex-wrap">
+            <span class="text-amber-400 text-sm">${epScore ? fmtStars(epScore.score) + `<span style="color:#c8a25c;font-weight:700;margin-left:4px;font-size:13px">${fmtScore(epScore.score)} 分</span>` : `<span class="text-gray-500 cursor-pointer" onclick="epEditor(${i})"><i class="fa-regular fa-star mr-1"></i>去写短评</span>`}</span>
+            ${epScore ? `<span class="text-xs text-gray-400 truncate flex-1">${epScore.comment || ""}</span><button class="text-xs text-indigo-300 hover:underline whitespace-nowrap" onclick="epEditor(${i})"><i class="fa-regular fa-pen-to-square mr-1"></i>编辑</button><button class="text-xs text-rose-300 hover:underline whitespace-nowrap" onclick="removeEpScore(${i})"><i class="fa-regular fa-trash-can mr-1"></i>删除</button><span style="cursor:pointer;color:#7c86b4;font-size:12px;white-space:nowrap" title="查看其他用户对本集评分" data-anime="${a.id}" data-type="ep" data-ep="${i}" onclick="DpccaReviewWall.openBy(this)"><i class="fa-regular fa-comment-dots mr-1"></i><span class="rw-num">…</span></span>` : ""}
+          </div>` : `<span class="text-xs text-gray-500">看完后可评分</span>`}
+      </div>`;
+  }
+
+  $("detailBody").innerHTML = `
+    <div class="flex items-center justify-center gap-4 px-12 mb-4">
+      <button class="btn btn-ghost" onclick="prevDetail()" ${detailIndex <= 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-left"></i> 上一部</button>
+      <span class="text-xs text-gray-400 whitespace-nowrap">${detailIndex + 1} / ${detailList.length}</span>
+      <button class="btn btn-ghost" onclick="nextDetail()" ${detailIndex >= detailList.length - 1 ? "disabled" : ""}>下一部 <i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+    <div class="flex flex-col md:flex-row gap-6">
+      <div class="md:w-72 flex-none">
+        <div class="rounded-2xl aspect-[4/5] mb-4 overflow-hidden">${coverHTML(a, "72px")}</div>
+        <div class="flex flex-wrap gap-2 mb-3">
+          ${a.tags.map(t => `<span class="tag">#${t}</span>`).join("")}
+        </div>
+        <div class="text-xs text-gray-400 space-y-1.5 mb-4">
+          <div><i class="fa-solid fa-calendar mr-2 w-4 text-indigo-400"></i>${dateStr(a)}</div>
+          <div><i class="fa-solid fa-calendar-week mr-2 w-4 text-indigo-400"></i>更新星期 · ${weekStr(a)}</div>
+          <div><i class="fa-solid fa-clapperboard mr-2 w-4 text-indigo-400"></i>全 ${a.episodes} 集</div>
+          <div><i class="fa-solid fa-book mr-2 w-4 text-indigo-400"></i>来源 · ${sourceOf(a)}</div>
+          <div><i class="fa-solid fa-film mr-2 w-4 text-indigo-400"></i>类型 · ${typeLabelOf(a)}</div>
+        </div>
+        <div class="space-y-2">
+          <div class="text-xs text-gray-400 mb-1 font-semibold">追番状态</div>
+          ${["watching","finished","abandoned"].map(s2 => `
+            <button class="btn w-full justify-start ${st === s2 ? "btn-primary" : "btn-ghost"}" onclick="setStatus('${s2}')">
+              ${s2 === "watching" ? '<i class="fa-solid fa-play"></i>' : s2 === "finished" ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-flag"></i>'}
+              ${s2 === "watching" ? "追番中" : s2 === "finished" ? "已看完" : "已弃番"}
+            </button>`).join("")}
+        </div>
+        ${staffHTML(a)}
+      </div>
+      <div class="flex-1 min-w-0">
+        <h2 class="text-2xl font-bold mb-1">${a.title}</h2>
+        <p class="text-gray-400 text-sm leading-relaxed mb-4">${a.desc}</p>
+
+        <!-- 开播前预期分 -->
+        <div class="glass p-4 mb-4">
+          <div class="font-semibold mb-3"><i class="fa-solid fa-flag-checkered mr-2 text-indigo-400"></i>开播前预期分 ${pvBtnHTML(a)}</div>
+          <div class="mb-3">${scoreAreaHTML("open")}</div>
+          <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-xs">
+            <span class="text-gray-400"><i class="fa-solid fa-comments mr-1"></i>开播评分墙 · <b class="rw-num" style="color:#c09a5b">…</b> 人已评</span>
+            <button type="button" data-anime="${a.id}" data-type="open" data-ep="0" onclick="DpccaReviewWall.openBy(this)" style="background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:#a5b4fc;font-size:12px">查看更多评论 <i class="fa-solid fa-angle-right"></i></button>
+          </div>
+        </div>
+
+        <!-- 单集评分 -->
+        <div class="glass p-4 mb-4">
+          <div class="font-semibold mb-3"><i class="fa-solid fa-list mr-2 text-indigo-400"></i>单集评分</div>
+          <div class="space-y-2">${eps}</div>
+        </div>
+
+        <!-- 弃番评论：仅在状态 = 已弃番时显示，置于完结评分之前 -->
+        ${st === "abandoned" ? abandonBlockHTML() : ""}
+
+        <!-- 完结评分 -->
+        <div class="glass p-4 ${finalLocked ? "" : "opacity-50"}">
+          <div class="font-semibold mb-1"><i class="fa-solid fa-trophy mr-2 text-indigo-400"></i>完结评分</div>
+          <p class="text-xs text-gray-500 mb-3">${finalLocked ? "已解锁，可以打分啦！" : `看完全部 ${a.episodes} 集后解锁（当前 ${watched.length}/${a.episodes}）`}</p>
+          ${finalPreview(ud, a) ? `<div class="text-xs mb-3 py-1.5 px-3 rounded-lg bg-white/5 border border-dashed" style="color:#a8988a"><i class="fa-solid fa-calculator mr-1"></i>参考完结分：<b style="color:#c09a5b">${finalPreview(ud, a)}</b>（开播前预期分×0.5 + 各集平均分×0.5）</div>` : ""}
+          ${finalLocked ? `<div class="mb-3">${scoreAreaHTML("final")}</div>` : `<div class="text-sm text-gray-500 flex items-center gap-2"><i class="fa-solid fa-lock"></i> 锁定中</div>`}
+          <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-xs">
+            <span class="text-gray-400"><i class="fa-solid fa-comments mr-1"></i>完结评分墙 · <b class="rw-num" style="color:#c09a5b">…</b> 人已评</span>
+            <button type="button" data-anime="${a.id}" data-type="final" data-ep="0" onclick="DpccaReviewWall.openBy(this)" style="background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:#a5b4fc;font-size:12px">查看更多评论 <i class="fa-solid fa-angle-right"></i></button>
+          </div>
+        </div>
+
+        ${overallScoreHTML(a)}
+
+        <!-- 操作 -->
+        <div class="flex gap-3 mt-5">
+          <button class="btn btn-primary" onclick="openShare()"><i class="fa-solid fa-image"></i> 生成分享卡片</button>
+          <button class="btn" onclick="closeDetail()">关闭</button>
+        </div>
+      </div>
+    </div>`;
+  if (window.DpccaReviewWall) window.DpccaReviewWall.refreshAll(a.id);
+}
+
+function escapeAttr(s) { return (s || "").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+
+/* 单集编辑器 */
+function epEditor(i) {
+  const existing = $("epEditorBox");
+  if (existing) {
+    if (currentEp === i) { removeEpEditor(); return; }
+    removeEpEditor();
+  }
+  currentEp = i;
+  const ud = userData[currentAnime.id] || {};
+  const epScores = (ud.episodes && ud.episodes[currentAnime.id] && ud.episodes[currentAnime.id].epScores) || {};
+  epScoreDraft = (epScores[i] && epScores[i].score) || 0;
+  epCommentDraft = (epScores[i] && epScores[i].comment) || "";
+  const row = document.createElement("div");
+  row.id = "epEditorBox";
+  row.className = "glass p-4 mb-3 border-indigo-500/40";
+  row.innerHTML = `
+    <div class="font-semibold text-sm mb-2">EP${i} 评分</div>
+    <div id="epStars" class="flex gap-1 mb-2 items-center flex-wrap">${starsHTML(epScoreDraft, "setEpScore", "epScoreHint")}</div>
+    <input id="epComment" type="text" placeholder="单集短评…" value="${escapeAttr(epCommentDraft)}" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500/60 mb-2">
+    <div class="flex gap-2">
+      <button class="btn btn-primary" onclick="saveEpScore()"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+      <button class="btn btn-ghost" onclick="removeEpEditor()">取消</button>
+    </div>`;
+  const target = [...document.querySelectorAll(".ep-row")].find(r => r.textContent.includes(`EP${i}`));
+  if (target) target.after(row);
+  else $("detailBody").querySelector(".glass.p-4 .space-y-2").appendChild(row);
+}
+function removeEpEditor() { const b = $("epEditorBox"); if (b) b.remove(); }
+function setOpenScore(v) { detailScoreOpen = detailScoreOpen === v ? v - 0.5 : v; renderStars("openStars", detailScoreOpen); }
+function setFinalScore(v) { detailScoreFinal = detailScoreFinal === v ? v - 0.5 : v; renderStars("finalStars", detailScoreFinal); }
+function setEpScore(v) { epScoreDraft = epScoreDraft === v ? v - 0.5 : v; renderStars("epStars", epScoreDraft); }
+function renderStars(id, v) {
+  const el = $(id); if (!el) return;
+  const hintId = id === "openStars" ? "openScoreHint" : id === "finalStars" ? "finalScoreHint" : "epScoreHint";
+  el.innerHTML = starsHTML(v, id === "openStars" ? "setOpenScore" : id === "finalStars" ? "setFinalScore" : "setEpScore", hintId);
+}
+
+/* ============================================================
+ * 状态与保存
+ * ============================================================ */
+async function setStatus(s) {
+  const id = currentAnime.id;
+  userData[id] = userData[id] || {};
+  if (s === "finished") {
+    userData[id].episodes = userData[id].episodes || {};
+    userData[id].episodes[id] = userData[id].episodes[id] || {};
+    const d = userData[id].episodes[id];
+    d.watched = d.watched || [];
+    for (let i = 1; i <= currentAnime.episodes; i++) if (!d.watched.includes(i)) d.watched.push(i);
+  }
+  // 离开「已弃番」状态时清除弃番评论编辑态，避免下次切回闪现编辑框
+  if (s !== "abandoned" && detailEditing === "abandon") detailEditing = "";
+  userData[id].status = s;
+  await persist();
+  renderDetail(); renderProfile();
+  toast(s === "watching" ? "已设为追番中" : s === "finished" ? "已看完：全部集数已勾选，完结评分已解锁" : "已设为已弃番");
+}
+
+async function toggleEp(i) {
+  const id = currentAnime.id;
+  userData[id] = userData[id] || {};
+  userData[id].episodes = userData[id].episodes || {};
+  userData[id].episodes[id] = userData[id].episodes[id] || {};
+  const d = userData[id].episodes[id];
+  d.watched = d.watched || [];
+  const idx = d.watched.indexOf(i);
+  if (idx >= 0) d.watched.splice(idx, 1); else d.watched.push(i);
+  if (d.watched.length >= currentAnime.episodes) {
+    userData[id].status = "finished";
+    if (detailEditing === "abandon") detailEditing = "";
+    await persist();
+    renderDetail(); renderProfile();
+    showConfetti(id);
+  } else {
+    if (userData[id].status === "finished") userData[id].status = "watching";
+    await persist();
+    renderDetail(); renderProfile();
+  }
+}
+
+/* ---------- 开播/完结评分三态组件：去写短评 → 保存 → 编辑/删除 ---------- */
+function _escHtml(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ============================================================
+ * v3.0 评论框组件：加宽 + 自动换行 + 右下角点击放大/还原
+ * （「单集短评」保持原样，不使用该组件）
+ * ============================================================ */
+function cmtBoxHTML(id, placeholder, value, wrapCls) {
+  return `<div class="cmt-wrap ${wrapCls || "mb-3"}">
+    <textarea id="${id}" rows="1" placeholder="${placeholder}" class="cmt-area bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-500/60" oninput="autoGrow('${id}')">${_escHtml(value)}</textarea>
+    <button type="button" class="cmt-grow" title="点击放大 / 还原评论框" onclick="cmtToggle('${id}')"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+  </div>`;
+}
+
+/* 随内容自动增高（上限由 .grown 状态决定：默认 170px / 放大后 420px） */
+function autoGrow(id) {
+  const el = $(id);
+  if (!el) return;
+  const wrap = el.closest ? el.closest(".cmt-wrap") : null;
+  const max = wrap && wrap.classList.contains("grown") ? 420 : 170;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight + 2, max) + "px";
+}
+
+/* 右下角按钮：在「放大」与「还原」之间切换 */
+function cmtToggle(id) {
+  const el = $(id);
+  if (!el) return;
+  const wrap = el.closest ? el.closest(".cmt-wrap") : null;
+  if (wrap) wrap.classList.toggle("grown");
+  autoGrow(id);
+  const btn = wrap && wrap.querySelector(".cmt-grow");
+  if (btn) {
+    btn.innerHTML = wrap.classList.contains("grown")
+      ? '<i class="fa-solid fa-down-left-and-up-right-to-center"></i>'
+      : '<i class="fa-solid fa-up-right-and-down-left-from-center"></i>';
+  }
+}
+
+/* 渲染开播/完结评分区域：空态 CTA / 编辑态 / 已保存态（保存后收起为 编辑+删除） */
+function scoreAreaHTML(kind) {
+  const s = ((userData[currentAnime.id] || {}).scores || {})[kind];
+  const saved = s && s.score;
+  const isEdit = detailEditing === kind;
+  const isOpen = kind === "open";
+  const starId = isOpen ? "openStars" : "finalStars";
+  const setFn = isOpen ? "setOpenScore" : "setFinalScore";
+  const hintId = isOpen ? "openScoreHint" : "finalScoreHint";
+  const cmtId = isOpen ? "openComment" : "finalComment";
+  const draftScore = isOpen ? detailScoreOpen : detailScoreFinal;
+  const draftCmt = isOpen ? detailCommentOpen : detailCommentFinal;
+  if (isEdit) {
+    return `
+      <div id="${kind}Editor">
+        <div id="${starId}" class="flex gap-1 mb-3 items-center flex-wrap">${starsHTML(draftScore, setFn, hintId)}</div>
+        ${cmtBoxHTML(cmtId, isOpen ? "写下开播前预期短评…（可自动换行，点右下角放大）" : "写完结总评…（可自动换行，点右下角放大）", draftCmt)}
+        <div class="flex gap-2">
+          <button class="btn btn-primary" onclick="saveScore('${kind}')"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="btn btn-ghost" onclick="cancelScore('${kind}')">取消</button>
+        </div>
+      </div>`;
+  }
+  if (!saved) {
+    return `
+      <div class="flex items-center gap-2 flex-wrap">
+        <button class="btn btn-primary" onclick="beginScore('${kind}')"><i class="fa-regular fa-star mr-1"></i>去写短评</button>
+        <span class="text-xs text-gray-500">${isOpen ? "开播前的期待，一句话即可同步公开" : "追完的最终评价，一句话即可同步公开"}</span>
+      </div>`;
+  }
+  const hasCmt = !!(s.comment && String(s.comment).trim());
+  return `
+    <div class="rounded-xl border border-white/10 bg-white/5 p-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-amber-400 text-sm">${fmtStars(s.score)} <span style="color:#c8a25c;font-weight:700;margin-left:4px;font-size:13px">${fmtScore(s.score)} 分</span></span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(52,211,153,.14);color:#5eead4">已同步</span>
+      </div>
+      ${hasCmt ? `<div class="text-sm text-gray-300 mt-1.5 break-words">${_escHtml(s.comment)}</div>` : `<div class="text-[11px] text-gray-500 mt-1.5">未填写短评，评分仍会同步展示在公开墙与管理后台</div>`}
+      <div class="flex items-center gap-3 mt-2">
+        <button class="text-xs text-indigo-300 hover:underline whitespace-nowrap" onclick="beginScore('${kind}')"><i class="fa-regular fa-pen-to-square mr-1"></i>编辑</button>
+        <button class="text-xs text-rose-300 hover:underline whitespace-nowrap" onclick="removeScore('${kind}')"><i class="fa-regular fa-trash-can mr-1"></i>删除</button>
+      </div>
+    </div>`;
+}
+
+function beginScore(kind) {
+  const s = ((userData[currentAnime.id] || {}).scores || {})[kind] || {};
+  if (kind === "open") { detailScoreOpen = s.score || 0; detailCommentOpen = s.comment || ""; }
+  else { detailScoreFinal = s.score || 0; detailCommentFinal = s.comment || ""; }
+  detailEditing = kind;
+  renderDetail();
+  setTimeout(function () {
+    const el = $(kind === "open" ? "openComment" : "finalComment");
+    if (el) { el.focus(); autoGrow(el.id); }
+  }, 60);
+}
+function cancelScore(kind) { if (detailEditing === kind) detailEditing = ""; renderDetail(); }
+
+async function saveScore(kind) {
+  const id = currentAnime.id;
+  const comment = String($(kind === "open" ? "openComment" : "finalComment").value || "").trim();
+  const score = kind === "open" ? detailScoreOpen : detailScoreFinal;
+  if (!score) { toast(kind === "open" ? "请先选择开播前预期分" : "请先选择完结评分", true); return; }
+  userData[id] = userData[id] || {};
+  userData[id].scores = userData[id].scores || {};
+  userData[id].scores[kind] = { score: score, comment: comment };
+  detailEditing = "";
+  await persist();
+  renderDetail(); renderProfile();
+  if (window.DpccaReviewWall) {
+    window.DpccaReviewWall.pushRating(id, currentAnime.title, kind, "0", score, comment);
+    window.DpccaReviewWall.refreshAll(id);
+  }
+  toast("已保存" + (kind === "open" ? "开播前预期分" : "完结评分"));
+}
+
+async function removeScore(kind) {
+  const id = currentAnime.id;
+  const label = kind === "open" ? "开播前预期分" : "完结评分";
+  if (!confirm("删除这条" + label + "？\n评分与短评都会被移除，公开墙与管理后台也会同步移除该记录。")) return;
+  const ud = userData[id] || {};
+  if (ud.scores) delete ud.scores[kind];
+  if (kind === "open") { detailScoreOpen = 0; detailCommentOpen = ""; } else { detailScoreFinal = 0; detailCommentFinal = ""; }
+  detailEditing = "";
+  await persist();
+  renderDetail(); renderProfile();
+  if (window.DpccaReviewWall) {
+    window.DpccaReviewWall.pushRating(id, currentAnime.title, kind, "0", 0, "");
+    window.DpccaReviewWall.refreshAll(id);
+  }
+  toast("已删除" + label);
+}
+
+/* ---------- 弃番评论组件：与开播/完结评分同一套三态交互（去写 → 保存 → 编辑/删除），
+ * 仅存于用户自身追番档案（userData.abandonedComment），不推送到公开评分墙 ---------- */
+function abandonBlockHTML() {
+  const ud = userData[currentAnime.id] || {};
+  const cmt = String(ud.abandonedComment || "").trim();
+  const isEdit = detailEditing === "abandon";
+  let body = "";
+  if (isEdit) {
+    body = `
+      <div id="abandonEditor">
+        ${cmtBoxHTML("abandonComment", "写下弃番原因或一句吐槽…（可自动换行，点右下角放大）", detailCommentAbandoned)}
+        <div class="flex gap-2">
+          <button class="btn btn-primary" onclick="saveAbandonComment()"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+          <button class="btn btn-ghost" onclick="cancelAbandonComment()">取消</button>
+        </div>
+      </div>`;
+  } else if (!cmt) {
+    body = `
+      <div class="flex items-center gap-2 flex-wrap">
+        <button class="btn btn-primary" onclick="beginAbandonComment()"><i class="fa-regular fa-comment mr-1"></i>去写评论</button>
+        <span class="text-xs text-gray-500">记录弃番原因，仅保存在你的追番档案中</span>
+      </div>`;
+  } else {
+    body = `
+      <div class="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div class="text-sm text-gray-300 break-words">${_escHtml(cmt)}</div>
+        <div class="flex items-center gap-3 mt-2">
+          <button class="text-xs text-indigo-300 hover:underline whitespace-nowrap" onclick="beginAbandonComment()"><i class="fa-regular fa-pen-to-square mr-1"></i>编辑</button>
+          <button class="text-xs text-rose-300 hover:underline whitespace-nowrap" onclick="removeAbandonComment()"><i class="fa-regular fa-trash-can mr-1"></i>删除</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="glass p-4 mb-4 drop-in">
+      <div class="font-semibold mb-1"><i class="fa-solid fa-flag mr-2 text-rose-400"></i>弃番评论</div>
+      <p class="text-xs text-gray-500 mb-3">已弃番，在这里记下弃番原因，方便日后回看</p>
+      <div>${body}</div>
+    </div>`;
+}
+function beginAbandonComment() {
+  detailCommentAbandoned = (userData[currentAnime.id] || {}).abandonedComment || "";
+  detailEditing = "abandon";
+  renderDetail();
+  setTimeout(function () { const el = $("abandonComment"); if (el) { el.focus(); autoGrow(el.id); } }, 60);
+}
+function cancelAbandonComment() { if (detailEditing === "abandon") detailEditing = ""; renderDetail(); }
+async function saveAbandonComment() {
+  const el = $("abandonComment");
+  const comment = String(el ? el.value : "").trim();
+  if (!comment) { toast("请先写下弃番评论", true); return; }
+  const id = currentAnime.id;
+  userData[id] = userData[id] || {};
+  userData[id].abandonedComment = comment;
+  detailCommentAbandoned = comment;
+  detailEditing = "";
+  await persist();
+  renderDetail(); renderProfile();
+  toast("弃番评论已保存");
+}
+async function removeAbandonComment() {
+  if (!confirm("删除这条弃番评论？")) return;
+  const id = currentAnime.id;
+  if (userData[id]) delete userData[id].abandonedComment;
+  detailCommentAbandoned = "";
+  detailEditing = "";
+  await persist();
+  renderDetail(); renderProfile();
+  toast("已删除弃番评论");
+}
+
+/* 删除某集评分（分数+短评一并移除，公开墙与管理后台同步删除该墙行） */
+async function removeEpScore(ep) {
+  const id = currentAnime.id;
+  if (!confirm("删除 EP" + ep + " 的评分与短评？\n公开墙与管理后台会同步移除该记录。")) return;
+  userData[id] = userData[id] || {};
+  userData[id].episodes = userData[id].episodes || {};
+  userData[id].episodes[id] = userData[id].episodes[id] || {};
+  const epObj = userData[id].episodes[id];
+  if (epObj.epScores) delete epObj.epScores[ep];
+  await persist();
+  renderDetail(); renderProfile();
+  if (window.DpccaReviewWall) {
+    window.DpccaReviewWall.pushRating(id, currentAnime.title, "ep", String(ep), 0, "");
+    window.DpccaReviewWall.refreshAll(id);
+  }
+  toast("已删除 EP" + ep + " 评分");
+}
+
+async function saveEpScore() {
+  if (!epScoreDraft) { toast("请先选择分数", true); return; }
+  const id = currentAnime.id;
+  userData[id] = userData[id] || {};
+  userData[id].episodes = userData[id].episodes || {};
+  userData[id].episodes[id] = userData[id].episodes[id] || {};
+  userData[id].episodes[id].epScores = userData[id].episodes[id].epScores || {};
+  userData[id].episodes[id].epScores[currentEp] = { score: epScoreDraft, comment: $("epComment").value.trim() };
+  await persist();
+  removeEpEditor();
+  renderDetail(); renderProfile();
+  if (window.DpccaReviewWall) window.DpccaReviewWall.pushRating(id, currentAnime.title, "ep", String(currentEp), epScoreDraft, $("epComment").value.trim());
+  toast("单集评分已保存");
+}
+
+/* ---------- 保存失败现场：醒目红条 + 自动补同步 ---------- */
+let dpccaSaveFailTimer = null;
+function hideSaveFailBar() {
+  if (dpccaSaveFailTimer) { clearInterval(dpccaSaveFailTimer); dpccaSaveFailTimer = null; }
+  const bar = document.getElementById("dpccaSaveFailBar");
+  if (bar) bar.remove();
+}
+function showSaveFailBar(info) {
+  let bar = document.getElementById("dpccaSaveFailBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "dpccaSaveFailBar";
+    document.body.appendChild(bar);
+  }
+  bar.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483000;background:#8c2f22;color:#fff;border-radius:12px;padding:12px 14px;font:13px/1.7 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35);max-height:46vh;overflow:auto";
+  bar.innerHTML = "";
+  const t = document.createElement("div");
+  t.style.fontWeight = "700";
+  t.textContent = "⚠ 云端保存失败：本地修改暂未同步（请勿刷新，正在自动重试）";
+  bar.appendChild(t);
+  const d = document.createElement("div");
+  d.style.margin = "6px 0";
+  d.style.fontSize = "12px";
+  d.style.whiteSpace = "pre-wrap";
+  d.style.wordBreak = "break-all";
+  d.style.opacity = ".95";
+  d.textContent = (info && info.uid != null ? "当前身份 uid：" + info.uid + "\n" : "") + ((info && info.message) || "");
+  bar.appendChild(d);
+  const btns = document.createElement("div");
+  btns.style.display = "flex";
+  btns.style.gap = "8px";
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "复制错误详情";
+  copyBtn.style.cssText = "flex:1;padding:7px 0;border:none;border-radius:8px;background:#fdf6f2;color:#8c2f22;font-weight:700;cursor:pointer";
+  copyBtn.onclick = function () {
+    try { navigator.clipboard.writeText(JSON.stringify(info || {}, null, 2)).then(function(){ toast("已复制"); }); } catch (e) { prompt("请手动复制：", JSON.stringify(info)); }
+  };
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "我知道了";
+  closeBtn.style.cssText = "flex:1;padding:7px 0;border:none;border-radius:8px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer";
+  closeBtn.onclick = hideSaveFailBar;
+  btns.appendChild(copyBtn);
+  btns.appendChild(closeBtn);
+  bar.appendChild(btns);
+}
+function scheduleAutoResync() {
+  if (dpccaSaveFailTimer) return;
+  dpccaSaveFailTimer = setInterval(async () => {
+    try {
+      await dataProvider.saveUserData(userData);
+      hideSaveFailBar();
+      toast("已自动补同步到云端");
+    } catch (e) { console.warn("自动补同步失败，继续重试", e); }
+  }, 4000);
+}
+
+/* 持久化（走 dataProvider）。失败自动重试 2 次；最终失败时给出可定位原因 */
+async function persist() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await dataProvider.saveUserData(userData);
+      hideSaveFailBar();
+      return true;
+    } catch (e) {
+      if (attempt < 2) {
+        console.warn("云端保存第 " + (attempt + 1) + " 次失败，重试中", e);
+        await new Promise(r => setTimeout(r, 400));
+        continue;
+      }
+      console.error("云端保存失败", e);
+      const raw = (e && (e.errMsg || e.message)) ? String(e.errMsg || e.message) : "";
+      const code = (e && (e.errCode || e.code)) ? String(e.errCode || e.code) : "";
+      const reason = (code + (raw ? (code ? " " : "") + raw : "")).trim().slice(0, 150);
+      const info = {
+        time: new Date().toISOString(),
+        uid: (dataProvider._cloud && dataProvider._cloud._auth && dataProvider._cloud._auth.currentUser) ? dataProvider._cloud._auth.currentUser.uid : "(空/null)",
+        useCloud: !!dataProvider.USE_CLOUD,
+        message: raw,
+      };
+      window.__dpccaLastSaveError = info;
+      showSaveFailBar(info);
+      scheduleAutoResync();
+      toast("云端保存失败，本地已保留修改，请勿刷新（自动补同步中）" + (reason ? "（" + reason + "）" : ""), true);
+      return false;
+    }
+  }
+  return false;
+}
+
+/* ============================================================
+ * 完结撒花
+ * ============================================================ */
+function showConfetti(animeId) {
+  if (confettiShown.has(animeId)) { $("confettiModal").classList.add("show"); return; }
+  confettiShown.add(animeId);
+  const layer = $("confettiLayer");
+  layer.innerHTML = "";
+  const colors = ["#d4c4a8", "#c0a880", "#a5b28a", "#c09a5b", "#c79a8a", "#8a9a6b"];
+  for (let i = 0; i < 80; i++) {
+    const c = document.createElement("div");
+    c.className = "confetti";
+    c.style.left = Math.random() * 100 + "vw";
+    c.style.background = colors[i % colors.length];
+    c.style.animationDelay = Math.random() * 1.2 + "s";
+    c.style.animationDuration = 2.5 + Math.random() * 2 + "s";
+    layer.appendChild(c);
+  }
+  $("confettiModal").classList.add("show");
+}
+function closeConfetti() { $("confettiModal").classList.remove("show"); }
+
+/* ============================================================
+ * 一图流分享卡片（单番）
+ * ============================================================ */
+let shareCardMode = "simple";
+
+function setShareMode(mode) {
+  shareCardMode = mode;
+  renderShareCard();
+}
+
+function openShare() {
+  shareCardMode = "simple";
+  renderShareCard();
+  $("shareModal").classList.add("show");
+}
+function closeShare() { $("shareModal").classList.remove("show"); }
+
+function renderShareCard() {
+  const a = currentAnime;
+  const ud = userData[a.id] || {};
+  const st = ud.status || "未标记";
+  const stMap = { watching: "追番中", finished: "已看完", abandoned: "已弃番" };
+  const avg = calcAvg(ud.scores);
+  const watched = (ud.episodes && ud.episodes[a.id] && ud.episodes[a.id].watched) || [];
+  const open = (ud.scores && ud.scores.open) || null;
+  const fin = (ud.scores && ud.scores.final) || null;
+  const epScores = (ud.episodes && ud.episodes[a.id] && ud.episodes[a.id].epScores) || {};
+  const epAvg = epAvgOf(ud, a);
+
+  const simpleHTML = `
+    <div class="cover-big overflow-hidden">${coverHTML(a, "72px")}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <h2>${a.title}</h2>
+      ${avg ? `<div style="font-size:26px;font-weight:800;color:#c09a5b">${avg}<span style="font-size:13px;color:#a8988a"> 分</span></div>` : ""}
+    </div>
+    <div class="meta">${dateStr(a)} · ${a.episodes}集 · ${watched.length}/${a.episodes} 已看</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="tag" style="color:${st === "追番中" ? "#5f7350" : st === "已看完" ? "#5a7185" : "#b06a5a"}">${stMap[st] || st}</span>
+      ${a.tags.map(t => `<span class="tag">#${t}</span>`).join("")}
+    </div>
+    <div style="background:#efe7d9;border-radius:12px;padding:12px;font-size:13px;line-height:1.8">
+      ${open ? `<div><b style="color:#c09a5b">开播前预期 ${fmtStars(open.score)} ${open.score}</b>${open.comment ? `<div style="color:#a8988a">${escapeAttr(open.comment)}</div>` : ""}</div>` : ""}
+      ${epAvg ? `<div><b style="color:#8a9a6b">各集平均 ${epAvg}</b></div>` : ""}
+      ${fin ? `<div><b style="color:#5a7185">完结 ${fmtStars(fin.score)} ${fin.score}</b>${fin.comment ? `<div style="color:#a8988a">${escapeAttr(fin.comment)}</div>` : ""}</div>` : ""}
+      ${!open && !fin && !epAvg ? `<div style="color:#a8988a">还没有评分，快来为这部番打分吧！</div>` : ""}
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:#b3a08e;display:flex;justify-content:space-between;align-items:center">
+      <span>DPCCA 追番评分库</span><span>${new Date().toLocaleDateString()}</span>
+    </div>`;
+
+  const staff = a.staff || {};
+  const staffItems = [
+    staff.original && `原作：${staff.original}`,
+    staff.director && `导演：${staff.director}`,
+    staff.writer && `脚本：${staff.writer}`,
+    staff.music && `音乐：${staff.music}`,
+    staff.studio && `制作：${staff.studio}`,
+    staff.cast && staff.cast.length && `声优：${staff.cast.join("、")}`
+  ].filter(Boolean);
+
+  const epChips = [];
+  for (let i = 1; i <= a.episodes; i++) {
+    const es = epScores[i];
+    if (es && es.score) {
+      epChips.push(`<div class="share-ep-chip"><b>EP${i}</b> ${fmtStars(es.score)} ${es.score}${es.comment ? `<div style="color:#7a6857;margin-top:2px">${escapeAttr(es.comment)}</div>` : ""}</div>`);
+    }
+  }
+
+  const detailHTML = `
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div class="cover-big overflow-hidden" style="width:130px;flex:none;margin:0;font-size:48px">${coverHTML(a, "48px")}</div>
+      <div style="flex:1;min-width:0">
+        <h2 style="margin-top:0">${a.title}</h2>
+        <div class="meta">${sourceOf(a)} · ${typeLabelOf(a)} · ${a.episodes}集 · ${dateStr(a)} · ${weekStr(a)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span class="tag" style="color:${st === "追番中" ? "#5f7350" : st === "已看完" ? "#5a7185" : "#b06a5a"}">${stMap[st] || st}</span>
+          ${a.tags.map(t => `<span class="tag">#${t}</span>`).join("")}
+        </div>
+        ${avg ? `<div style="font-size:22px;font-weight:800;color:#c09a5b">${avg}<span style="font-size:12px;color:#a8988a"> 分</span></div>` : ""}
+      </div>
+    </div>
+    ${a.desc ? `<div class="share-desc">${escapeAttr(a.desc)}</div>` : ""}
+    ${staffItems.length ? `<div class="share-staff">${staffItems.map(x => `<span style="margin-right:10px">${x}</span>`).join("")}</div>` : ""}
+    <div style="margin:8px 0 12px;font-size:12px;color:#7a6857">已看进度：${watched.length}/${a.episodes} 集</div>
+    <div class="share-section">
+      <div class="share-section-title">评分详情</div>
+      ${open ? `<div class="share-score-row"><b style="color:#c09a5b">开播前预期 ${fmtStars(open.score)} ${open.score}</b>${open.comment ? `<div class="share-comment" style="margin-top:2px">${escapeAttr(open.comment)}</div>` : ""}</div>` : ""}
+      ${epAvg ? `<div class="share-score-row"><b style="color:#8a9a6b">各集平均 ${epAvg}</b></div>` : ""}
+      ${epChips.length ? `<div class="share-ep-grid" style="margin-top:8px">${epChips.join("")}</div>` : ""}
+      ${fin ? `<div class="share-score-row" style="margin-top:8px"><b style="color:#5a7185">完结 ${fmtStars(fin.score)} ${fin.score}</b>${fin.comment ? `<div class="share-comment" style="margin-top:2px">${escapeAttr(fin.comment)}</div>` : ""}</div>` : ""}
+      ${!open && !fin && !epAvg ? `<div style="color:#a8988a;font-size:12px">还没有评分，快来为这部番打分吧！</div>` : ""}
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:#b3a08e;display:flex;justify-content:space-between;align-items:center">
+      <span>DPCCA 追番评分库</span><span>${new Date().toLocaleDateString()}</span>
+    </div>`;
+
+  $("shareCard").innerHTML = shareCardMode === "detail" ? detailHTML : simpleHTML;
+
+  const simpleBtn = $("shareSimpleBtn");
+  const detailBtn = $("shareDetailBtn");
+  if (simpleBtn) {
+    simpleBtn.classList.toggle("btn-primary", shareCardMode === "simple");
+    simpleBtn.classList.toggle("btn-ghost", shareCardMode !== "simple");
+  }
+  if (detailBtn) {
+    detailBtn.classList.toggle("btn-primary", shareCardMode === "detail");
+    detailBtn.classList.toggle("btn-ghost", shareCardMode !== "detail");
+  }
+}
+
+async function downloadShare() {
+  const el = $("shareCard");
+  try {
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: null, useCORS: true });
+    const link = document.createElement("a");
+    link.download = `DPCCA_${currentAnime.title}_分享卡片.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    toast("分享卡片已下载");
+  } catch (e) {
+    console.error(e);
+    toast("导出失败，请重试", true);
+  }
+}
+
+/* ============================================================
+ * 我的追番
+ * ============================================================ */
+/* 汇总有记录（状态/评分/勾选/单集评分）的番剧 */
+function myRecordList() {
+  return Object.keys(userData).map(id => {
+    const d = userData[id] || {};
+    const a = library.find(x => x.id === id);
+    if (!a) return null;
+    const ep = (d.episodes && d.episodes[id]) || {};
+    const has = d.status
+      || (d.scores && (d.scores.open || d.scores.final))
+      || ((ep.watched && ep.watched.length) || (ep.epScores && Object.keys(ep.epScores).length));
+    if (!has) return null;
+    // 隐藏项：默认不显示（除非开启「显示隐藏项」），数据保留
+    if (d.hidden && !pfShowHidden) return null;
+    return { a, d };
+  }).filter(Boolean);
+}
+
+/* v3.0：多选筛选按钮（sel 为该维度当前选中的 Set；v 为 "" 或 0 表示「全部」选项） */
+function pfFilterBtn(v, sel, label, fn) {
+  const isAll = v === "" || v === 0;
+  const on = isAll ? sel.size === 0 : sel.has(v);
+  return `<button class="btn filter-btn ${on ? "btn-primary" : "btn-ghost"}" onclick="${fn}('${v}')">${label}</button>`;
+}
+/* 历史遗留：手动排序编辑模式守卫（已移除手动排序），保留空实现避免改各入口调用 */
+function guardSortEdit() {}
+function pfToggleStatus(v) { if (!v) pfStatuses.clear(); else pfStatuses.has(v) ? pfStatuses.delete(v) : pfStatuses.add(v); renderProfile(); }
+function pfToggleSource(v) { if (!v) pfSources.clear(); else pfSources.has(v) ? pfSources.delete(v) : pfSources.add(v); renderProfile(); }
+function pfToggleType(v) { if (!v) pfTypes.clear(); else pfTypes.has(v) ? pfTypes.delete(v) : pfTypes.add(v); renderProfile(); }
+function pfToggleYear(v) { const y = Number(v) || 0; if (!y) pfYears.clear(); else pfYears.has(y) ? pfYears.delete(y) : pfYears.add(y); renderProfile(); }
+function pfToggleMonth(v) { const m = Number(v) || 0; if (!m) pfMonths.clear(); else pfMonths.has(m) ? pfMonths.delete(m) : pfMonths.add(m); renderProfile(); }
+function pfToggleQuarter(v) { const q = Number(v) || 0; if (!q) pfQuarters.clear(); else pfQuarters.has(q) ? pfQuarters.delete(q) : pfQuarters.add(q); renderProfile(); }
+function pfClearFilters() {
+  pfStatuses.clear(); pfSources.clear(); pfTypes.clear(); pfYears.clear(); pfMonths.clear(); pfQuarters.clear();
+  renderProfile();
+}
+function hasPfFilter() {
+  return !!(pfStatuses.size || pfSources.size || pfTypes.size || pfYears.size || pfMonths.size || pfQuarters.size);
+}
+
+function pfFiltered(rows) {
+  const stMap = { watching: "追番中", finished: "已看完", abandoned: "已弃番" };
+  const q = pfSearch.trim().toLowerCase();
+  return rows.filter(({ a, d }) => {
+    if (pfStatuses.size) {
+      const stLabel = stMap[d.status] || "未标记";
+      // 「已评分」为独立条件：命中已标记状态或已评分任一即算通过
+      const hit = pfStatuses.has(stLabel) || (pfStatuses.has("已评分") && !!calcAvg(d.scores));
+      if (!hit) return false;
+    }
+    if (pfSources.size && !pfSources.has(sourceOf(a))) return false;
+    if (pfTypes.size && !pfTypes.has(typeLabelOf(a))) return false;
+    if (pfYears.size && !pfYears.has(a.year)) return false;
+    // 月份与季度同属「开播时间」维度：两者都选中时取并集（任一命中即通过）
+    if (pfMonths.size || pfQuarters.size) {
+      const mHit = pfMonths.has(monthOf(a));
+      const qHit = pfQuarters.has(quarterOf(a));
+      if (!mHit && !qHit) return false;
+    }
+    if (q) {
+      const hay = ((a.title || "") + " " + (a.id || "") + " " + (a.tags || []).join(" ") + " " + sourceOf(a) + " " + typeLabelOf(a)).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+/* ============================================================
+ * 搜索与排序（我的追番，样式与评分库一致）
+ * ============================================================ */
+function pfSetSearch(v) { pfSearch = v || ""; renderProfile(); }
+
+function pfSetSort(s) {
+  if (pfSort === s) {
+    pfSortDir = pfSortDir === "desc" ? "asc" : "desc";
+  } else {
+    pfSort = s;
+    pfSortDir = "desc";
+  }
+  try { localStorage.setItem("dpcca_pf_sort", JSON.stringify({ sort: pfSort, dir: pfSortDir })); } catch (e) {}
+  renderProfile();
+}
+
+/* 排序按钮高亮 + 方向箭头 */
+function renderPfSortBar() {
+  const fields = [
+    ["open", "开播前预期分"],
+    ["final", "完结评分"],
+    ["ep", "各集平均分"],
+    ["date", "开播时间"]
+  ];
+  fields.forEach(([key, label]) => {
+    const btn = $("pfSortBtn" + key[0].toUpperCase() + key.slice(1));
+    if (!btn) return;
+    const active = pfSort === key;
+    btn.classList.toggle("btn-primary", active);
+    btn.classList.toggle("btn-ghost", !active);
+    const icon = `<i class="fa-solid ${pfSortDir === "desc" ? "fa-arrow-down-short-wide" : "fa-arrow-up-short-wide"} mr-1"></i>`;
+    btn.innerHTML = icon + label;
+  });
+}
+
+/* 应用排序：与追番评分库一致——主=追番状态（追番中 → 已看完 → 已弃番）分组，
+   组内=按所选字段（默认开播前预期分）与方向排列 */
+function pfApplySort(rows) {
+  const dir = pfSortDir === "asc" ? 1 : -1;
+  const statusRank = (d) => {
+    const st = d.status;
+    if (st === "watching") return 0;
+    if (st === "finished") return 1;
+    if (st === "abandoned") return 2;
+    return 3; // 未标记 / 无状态沉底
+  };
+  const scoreOf = (d, a) => {
+    const s = d.scores || {};
+    if (pfSort === "open") return (s.open && s.open.score) || 0;
+    if (pfSort === "final") return (s.final && s.final.score) || 0;
+    if (pfSort === "ep") return Number(epAvgOf(d, a)) || 0;
+    if (pfSort === "date") return (a.year || 0) * 10000 + monthOf(a) * 100 + dayOf(a);
+    return 0;
+  };
+  return rows.slice().sort((x, y) => {
+    const rx = statusRank(x.d), ry = statusRank(y.d);
+    if (rx !== ry) return rx - ry;
+    return dir * (scoreOf(x.d, x.a) - scoreOf(y.d, y.a));
+  });
+}
+
+/* 视图切换 */
+function setPfView(v) {
+  guardSortEdit();
+  pfView = v;
+  $("viewSimple").classList.toggle("on", v === "simple");
+  $("viewDetail").classList.toggle("on", v === "detail");
+  renderProfile();
+}
+
+/* 简略视图：方格卡片 */
+function simpleCardHTML(a, d) {
+  const stMap = { watching: ["追番中", "tag-watching"], finished: ["已看完", "tag-finished"], abandoned: ["已弃番", "tag-abandoned"] };
+  const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+  const avg = calcAvg(d.scores);
+  const [label, cls] = (stMap[d.status] || ["未标记", "tag-none"]);
+  return `
+    <div class="pf-card ${d.hidden ? "pf-hidden-item" : ""}" data-id="${a.id}" onclick="openDetail('${a.id}')">
+      <div class="cover">${coverHTML(a, "46px")}</div>
+      ${d.hidden ? `<span class="pf-hidden-badge"><i class="fa-solid fa-eye-slash"></i>已隐藏</span>` : ""}
+      <div class="pf-card-body">
+        <div class="pf-card-title">${a.title}</div>
+        <div class="pf-card-meta">${dateStr(a)} · ${typeLabelOf(a)} · ${watched.length}/${a.episodes} 集</div>
+        <div class="pf-card-score">${avg ? `★ ${avg}` : "未评分"}</div>
+        <div class="pf-card-foot">
+          <span class="tag ${cls}">${label}</span>
+          ${scoreBlocksHTML(d, a)}
+        </div>
+      </div>
+      <button class="pf-del" title="${d.hidden ? "取消隐藏（恢复显示）" : "隐藏（清单与导出中不再显示）"}" onclick="event.stopPropagation(); toggleHidden('${a.id}')"><i class="fa-solid ${d.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
+      <button class="pf-del" style="top:46px" title="删除追番记录" onclick="event.stopPropagation(); confirmRemoveAnime('${a.id}')"><i class="fa-solid fa-trash-can"></i></button>
+    </div>`;
+}
+
+/* 详细视图：横条 + 点击展开各集评分与所有评论 */
+function detailRowHTML(a, d) {
+  const stMap = { watching: ["追番中", "tag-watching"], finished: ["已看完", "tag-finished"], abandoned: ["已弃番", "tag-abandoned"] };
+  const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+  const epScores = (d.episodes && d.episodes[a.id] && d.episodes[a.id].epScores) || {};
+  const avg = calcAvg(d.scores);
+  const avgEp = epAvgOf(d, a);
+  const open = (d.scores && d.scores.open) || null;
+  const fin = (d.scores && d.scores.final) || null;
+  const [label, cls] = (stMap[d.status] || ["未标记", "tag-none"]);
+  const isOpen = pfExpanded.has(a.id) ? "open" : "";
+
+  // 各集评分网格
+  const epCells = Array.from({ length: a.episodes }, (_, i) => i + 1).map(i => {
+    const sc = epScores[i];
+    const done = watched.includes(i);
+    const st = sc ? `<span class="ep-stars">${fmtStars(sc.score)} <b>${fmtScore(sc.score)}分</b></span>` : "";
+    const cmt = sc && sc.comment ? `<span class="ep-cmt">“${escapeAttr(sc.comment)}”</span>` : "";
+    return `<div class="ep-cell ${done ? "done" : ""}">
+      <span class="ep-t">EP${i}<span style="font-weight:400;color:#a8988a;margin-left:4px;font-size:10px">${epAirDate(a, i)}</span>${done ? `<span class="st"><i class="fa-solid fa-circle-check"></i> 已看</span>` : `<span class="todo">未看</span>`}</span>
+      ${st}${cmt}
+    </div>`;
+  }).join("");
+
+  // 评论汇总（开播前预期 / 完结 / 各集；已弃番番额外展示弃番评论）
+  const comments = [];
+  const abanCmt = d.status === "abandoned" ? String(d.abandonedComment || "").trim() : "";
+  if (abanCmt) comments.push(`<div class="pf-comment"><span class="pc-tag"><i class="fa-solid fa-flag"></i> 弃番</span><span class="pc-txt">${escapeAttr(abanCmt)}</span></div>`);
+  if (open && open.comment) comments.push(`<div class="pf-comment"><span class="pc-tag"><i class="fa-solid fa-flag-checkered"></i> 开播前</span><span class="pc-txt">${escapeAttr(open.comment)}</span></div>`);
+  if (fin && fin.comment) comments.push(`<div class="pf-comment"><span class="pc-tag"><i class="fa-solid fa-trophy"></i> 完结</span><span class="pc-txt">${escapeAttr(fin.comment)}</span></div>`);
+  Object.keys(epScores).sort((x, y) => x - y).forEach(i => {
+    const sc = epScores[i];
+    if (sc && sc.comment) comments.push(`<div class="pf-comment"><span class="pc-tag"><i class="fa-solid fa-tv"></i> EP${i}</span><span class="pc-txt">${escapeAttr(sc.comment)}</span></div>`);
+  });
+
+  return `
+    <div class="pf-row ${isOpen} ${d.hidden ? "pf-hidden-item" : ""}" id="pfrow-${a.id}" data-id="${a.id}">
+      <div class="pf-row-head" onclick="togglePfExpand('${a.id}')">
+        ${coverThumbHTML(a, 44)}
+        <div style="flex:1;min-width:0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="pf-row-title">${a.title}</span>
+            <span class="tag ${cls}">${label}</span>
+            ${d.hidden ? `<span class="tag" style="color:#a8988a;border-style:dashed"><i class="fa-solid fa-eye-slash mr-1"></i>已隐藏</span>` : ""}
+            ${avg ? `<span class="pf-row-score">★ ${avg}</span>` : ""}
+          </div>
+          <div class="pf-row-meta">${dateStr(a)} · ${a.episodes}集 · ${sourceOf(a)} · ${typeLabelOf(a)} · ${watched.length}/${a.episodes} 已看</div>
+        </div>
+        <span class="chev"><i class="fa-solid fa-chevron-down"></i></span>
+        <button class="pf-del" title="${d.hidden ? "取消隐藏（恢复显示）" : "隐藏（清单与导出中不再显示）"}" onclick="event.stopPropagation(); toggleHidden('${a.id}')"><i class="fa-solid ${d.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
+        <button class="pf-del" title="删除追番记录" onclick="event.stopPropagation(); confirmRemoveAnime('${a.id}')"><i class="fa-solid fa-trash-can"></i></button>
+      </div>
+      <div class="pf-row-body">
+        <div class="detail-blocks">
+          ${open ? `<div class="detail-block"><div class="db-label">开播前预期</div><div class="db-val" style="color:#c09a5b">${fmtStars(open.score)} ${fmtScore(open.score)}分</div>${open.comment ? `<div class="db-cmt">“${escapeAttr(open.comment)}”</div>` : ""}</div>` : ""}
+          ${avgEp ? `<div class="detail-block"><div class="db-label">各集平均</div><div class="db-val" style="color:#7d8f69">${avgEp}分</div></div>` : ""}
+          ${fin ? `<div class="detail-block"><div class="db-label">完结</div><div class="db-val" style="color:#5a7185">${fmtStars(fin.score)} ${fmtScore(fin.score)}分</div>${fin.comment ? `<div class="db-cmt">“${escapeAttr(fin.comment)}”</div>` : ""}</div>` : ""}
+        </div>
+        <div class="pf-sub-label"><i class="fa-solid fa-tv" style="color:#c09a5b"></i>各集评分</div>
+        <div class="ep-grid">${epCells}</div>
+        <div class="pf-sub-label"><i class="fa-solid fa-comment-dots" style="color:#c09a5b"></i>所有评论</div>
+        <div class="pf-comments">${comments.length ? comments.join("") : `<div class="pf-comment"><span class="pc-none">还没有写任何评论</span></div>`}</div>
+      </div>
+    </div>`;
+}
+
+/* 展开 / 收起详细视图横条 */
+function togglePfExpand(id) {
+  const row = document.getElementById("pfrow-" + id);
+  if (!row) return;
+  if (pfExpanded.has(id)) pfExpanded.delete(id); else pfExpanded.add(id);
+  row.classList.toggle("open");
+}
+
+/* 渲染我的追番页面主体
+ * 统计方块随筛选联动：stats 基于「筛选+搜索后」的集合（rowsFiltered）计算；
+ * 无筛选时 rowsFiltered === rowsAll，显示全部统计。footHTML 同时给出
+ * 「当前/全部」条数。 */
+function renderProfile() {
+  const rowsAll = myRecordList();
+  const rowsFiltered = pfFiltered(rowsAll);
+  const rows = pfApplySort(rowsFiltered);
+  const todayStr = new Date().toLocaleDateString();
+  $("todayStr").textContent = todayStr;
+  renderPfSortBar();
+  $("pfResultCount").textContent = rowsAll.length
+    ? (rowsFiltered.length === rowsAll.length ? `共 ${rows.length} 部` : `筛选出 ${rows.length} / ${rowsAll.length} 部`)
+    : "";
+
+  if (!rowsAll.length) {
+    $("summaryCard").innerHTML = `
+      <div class="pf-head">
+        <div><div class="pf-title">我的追番清单</div><div class="pf-sub">DPCCA 追番评分库 · ${todayStr}</div></div>
+        <div class="pf-emoji">📋</div>
+      </div>
+      <div class="empty"><i class="fa-solid fa-bookmark text-4xl mb-3 block opacity-30"></i><div>还没有追番记录，去 <a href="index.html" style="color:#c09a5b;text-decoration:underline">追番评分库</a> 点开一部番标记一下吧</div></div>`;
+    $("loading").style.display = "none";
+    return;
+  }
+
+  const stMap = { watching: ["追番中", "tag-watching"], finished: ["已看完", "tag-finished"], abandoned: ["已弃番", "tag-abandoned"] };
+  const count = { watching: 0, finished: 0, abandoned: 0, scored: 0 };
+  let totalWatched = 0;
+  rowsFiltered.forEach(({ a, d }) => {
+    if (d.status && count[d.status] !== undefined) count[d.status]++;
+    if (calcAvg(d.scores)) count.scored++;
+    const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+    totalWatched += watched.length;
+  });
+
+  // 统计区（含追番总计；数据来自 rowsFiltered —— 随筛选/搜索/隐藏联动）
+  const statsHTML = `
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-num">${rowsFiltered.length}</div><div class="stat-label">追番总计</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#5f7350">${count.watching}</div><div class="stat-label">追番中</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#5a7185">${count.finished}</div><div class="stat-label">已看完</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#b06a5a">${count.abandoned}</div><div class="stat-label">已弃番</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#c09a5b">${count.scored}</div><div class="stat-label">已评分</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#7d8f69">${totalWatched}</div><div class="stat-label">已看集数</div></div>
+    </div>`;
+
+  // 筛选栏（右侧面板，不参与一图流导出）。v3.0：全部筛选项多选，并在月份下方新增季度
+  const statusBtns = [""].concat(["追番中", "已看完", "已弃番", "已评分"])
+    .map(v => pfFilterBtn(v, pfStatuses, v === "" ? "全部" : v, "pfToggleStatus")).join("");
+  const sourceBtns = [""].concat(SOURCES)
+    .map(v => pfFilterBtn(v, pfSources, v === "" ? "全部来源" : v, "pfToggleSource")).join("");
+  const typeBtns = [""].concat(TYPES.map(t => t.label))
+    .map(v => pfFilterBtn(v, pfTypes, v === "" ? "全部类型" : v, "pfToggleType")).join("");
+  const yearBtns = YEARS
+    .map(v => pfFilterBtn(v, pfYears, v === 0 ? "全部年份" : v + "年", "pfToggleYear")).join("");
+  const monthBtns = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    .map(v => pfFilterBtn(v, pfMonths, v === 0 ? "全部月份" : v + "月", "pfToggleMonth")).join("");
+  const quarterBtns = [0, 1, 2, 3, 4]
+    .map(v => pfFilterBtn(v, pfQuarters, v === 0 ? "全部季度" : QUARTER_LABEL[v], "pfToggleQuarter")).join("");
+  $("pfFilterBar").innerHTML = `
+    <div class="filter-row" style="margin-bottom:10px">
+      <button class="btn filter-btn ${pfShowHidden ? "btn-primary" : "btn-ghost"} w-full justify-center" onclick="pfToggleHidden()">
+        <i class="fa-solid ${pfShowHidden ? "fa-eye" : "fa-eye-slash"} mr-1"></i>${pfShowHidden ? "正在显示隐藏项" : "显示隐藏项"}
+      </button>
+    </div>
+    <div class="filter-row"><div class="filter-title">状态</div><div class="flex flex-wrap gap-2">${statusBtns}</div></div>
+    <div class="filter-row"><div class="filter-title">来源</div><div class="flex flex-wrap gap-2">${sourceBtns}</div></div>
+    <div class="filter-row"><div class="filter-title">类型</div><div class="flex flex-wrap gap-2">${typeBtns}</div></div>
+    <div class="filter-row"><div class="filter-title">年份</div><div class="flex flex-wrap gap-2">${yearBtns}</div></div>
+    <div class="filter-row"><div class="filter-title">月份</div><div class="flex flex-wrap gap-2">${monthBtns}</div></div>
+    <div class="filter-row"><div class="filter-title">季度</div><div class="flex flex-wrap gap-2">${quarterBtns}</div></div>
+    ${hasPfFilter() ? `<button class="btn btn-ghost text-xs w-full mt-1" onclick="pfClearFilters()"><i class="fa-solid fa-rotate-left mr-1"></i>清除筛选</button>` : ""}`;
+
+  // 列表（简略=方格卡片 / 详细=横条可展开）；按状态分组渲染（追番中 → 已看完 → 已弃番，未标记沉底）
+  let listHTML = `<div class="empty py-6"><i class="fa-solid fa-filter text-3xl mb-3 block opacity-30"></i><div>没有符合条件的追番记录</div></div>`;
+  if (rows.length) {
+    const groupDefs = [
+      { key: "watching", label: "追番中", color: "#5f7350", icon: "fa-play" },
+      { key: "finished", label: "已看完", color: "#5a7185", icon: "fa-check" },
+      { key: "abandoned", label: "已弃番", color: "#b06a5a", icon: "fa-flag" }
+    ];
+    const bodyOf = (g) => (pfView === "detail"
+      ? `<div class="pf-detail-list">${g.map(({ a, d }) => detailRowHTML(a, d)).join("")}</div>`
+      : `<div class="pf-grid">${g.map(({ a, d }) => simpleCardHTML(a, d)).join("")}</div>`);
+    const handled = new Set(groupDefs.map(g => g.key));
+    const parts = groupDefs.map(g => {
+      const items = rows.filter(r => r.d.status === g.key);
+      if (!items.length) return "";
+      return `<div class="pf-group"><div class="pf-group-title"><i class="fa-solid ${g.icon}" style="color:${g.color}"></i><span style="color:${g.color}">${g.label}</span><span class="pf-group-count">${items.length} 部</span></div>${bodyOf(items)}</div>`;
+    }).filter(Boolean);
+    const rest = rows.filter(r => !handled.has(r.d.status));
+    if (rest.length) {
+      parts.push(`<div class="pf-group"><div class="pf-group-title"><i class="fa-regular fa-circle"></i><span>未标记</span><span class="pf-group-count">${rest.length} 部</span></div>${bodyOf(rest)}</div>`);
+    }
+    listHTML = parts.join("");
+  }
+
+  const footHTML = `<div class="pf-foot">共 ${rows.length} 部${rows.length !== rowsAll.length ? ` / 全部 ${rowsAll.length} 部` : ""} · 已看 ${totalWatched} 集</div>`;
+
+  $("summaryCard").innerHTML = `
+    <div class="pf-head">
+      <div><div class="pf-title">我的追番清单</div><div class="pf-sub">DPCCA 追番评分库 · ${todayStr}</div></div>
+      <div class="pf-emoji">📋</div>
+    </div>
+    ${statsHTML}
+    <div id="pfList">${listHTML}</div>
+    ${footHTML}`;
+  $("loading").style.display = "none";
+}
+
+/* 删除追番记录（含二次确认） */
+function confirmRemoveAnime(id) {
+  removeTargetId = id;
+  const a = library.find(x => x.id === id);
+  $("confirmRemoveText").textContent = `确认删除《${a ? a.title : id}》的全部追番记录？删除后该番剧的追番状态、开播前预期/完结/单集评分与集数勾选将一并清空，此操作无法恢复。`;
+  $("confirmRemoveModal").classList.add("show");
+}
+function closeConfirmRemove() { removeTargetId = null; $("confirmRemoveModal").classList.remove("show"); }
+async function doRemoveAnime() {
+  const id = removeTargetId;
+  closeConfirmRemove();
+  if (!id || !userData[id]) return;
+  delete userData[id];
+  // 同步清理历史遗留的手动排序顺序（__order），避免残留无效引用
+  if (Array.isArray(userData.__order)) userData.__order = userData.__order.filter(x => x !== id);
+  const ok = await persist();
+  if (window.DpccaReviewWall) {
+    const cr = window.DpccaReviewWall.clearAnime(id);
+    if (cr && typeof cr.then === "function") cr.then(function () { window.DpccaReviewWall.refreshAll(id); });
+    else window.DpccaReviewWall.refreshAll(id);
+  }
+  renderProfile();
+  if (ok) toast("已删除该番剧的追番记录");
+  else toast("云端同步失败，本地记录已删除，请勿刷新页面，稍后会自动重试同步", true);
+}
+
+/* ============================================================
+ * 隐藏 / 显示隐藏
+ * 隐藏的番剧：清单默认不显示（数据保留），导出一图流时始终排除。
+ * ============================================================ */
+async function toggleHidden(id) {
+  guardSortEdit();
+  userData[id] = userData[id] || {};
+  userData[id].hidden = !userData[id].hidden;
+  await persist();
+  renderProfile();
+  toast(userData[id].hidden ? "已隐藏该番剧，清单与导出中不再显示" : "已取消隐藏，恢复显示");
+}
+
+function pfToggleHidden() {
+  guardSortEdit();
+  pfShowHidden = !pfShowHidden;
+  renderProfile();
+}
+
+/* ============================================================
+ * 一图流导出：预览 + 下载（导出内容不含筛选框与删除按钮）
+ * html2canvas 1.4.1 不支持 grid/flex/aspect-ratio/min()，
+ * 因此导出时构建独立的专用 DOM（inline-block + 固定尺寸），截完即销毁。
+ * ============================================================ */
+function buildExportHTML(rows, all) {
+  const stMap = { watching: ["追番中", "tag-watching"], finished: ["已看完", "tag-finished"], abandoned: ["已弃番", "tag-abandoned"] };
+  const count = { watching: 0, finished: 0, abandoned: 0, scored: 0 };
+  let totalWatched = 0;
+  rows.forEach(({ a, d }) => {
+    if (d.status === "watching") count.watching++;
+    else if (d.status === "finished") count.finished++;
+    else if (d.status === "abandoned") count.abandoned++;
+    if (calcAvg(d.scores)) count.scored++;
+    const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+    totalWatched += watched.length;
+  });
+
+  const stats = [
+    [all.length, "追番总计", "#5c4a3d"],
+    [count.watching, "追番中", "#5f7350"],
+    [count.finished, "已看完", "#5a7185"],
+    [count.abandoned, "已弃番", "#b06a5a"],
+    [count.scored, "已评分", "#c09a5b"],
+    [totalWatched, "已看集数", "#7d8f69"]
+  ].map(([n, l, c]) => `<div class="ex-stat"><div class="n" style="color:${c}">${n}</div><div class="l">${l}</div></div>`).join("");
+
+  const cards = rows.map(({ a, d }) => {
+    const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+    const avg = calcAvg(d.scores);
+    const [label, cls] = (stMap[d.status] || ["未标记", "tag-none"]);
+    const s = d.scores || {};
+    const avgEp = epAvgOf(d, a);
+    const chips = [];
+    if (s.open && s.open.score) chips.push(`<span class="ex-chip" style="color:#c09a5b">开播前预期 ${fmtScore(s.open.score)}</span>`);
+    if (avgEp) chips.push(`<span class="ex-chip" style="color:#8a9a6b">各集均 ${avgEp}</span>`);
+    if (s.final && s.final.score) chips.push(`<span class="ex-chip" style="color:#5a7185">完结 ${fmtScore(s.final.score)}</span>`);
+    const cover = a.cover
+      ? `<img src="${a.cover}" crossorigin="anonymous" alt="${a.title || ""}" class="cover-img" loading="eager" onerror="this.outerHTML='<div class=&quot;cover-emoji&quot; style=&quot;background:${softGradient(a.gradient[0], a.gradient[1])};font-size:40px&quot;>${a.emoji || '🎬'}</div>'">`
+      : `<div class="cover-emoji" style="background:${softGradient(a.gradient[0], a.gradient[1])};font-size:40px">${a.emoji || '🎬'}</div>`;
+    return `<div class="ex-card">
+      <div class="ex-cover">${cover}</div>
+      <div class="ex-body">
+        <div class="ex-cname">${a.title}</div>
+        <div class="ex-meta">${dateStr(a)} · ${watched.length}/${a.episodes} 集</div>
+        <div class="ex-score">${avg ? `★ ${avg}` : "未评分"}</div>
+        <span class="tag ${cls}">${label}</span>
+        ${chips.join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  const todayStr = new Date().toLocaleDateString();
+  return `
+    <div class="ex-head">
+      <div><div class="ex-title">我的追番清单</div><div class="ex-sub">DPCCA 追番评分库 · ${todayStr}</div></div>
+      <div class="ex-emoji">📋</div>
+    </div>
+    <div class="ex-stats">${stats}</div>
+    <div>${cards}</div>
+    <div class="ex-foot">共 ${rows.length} 部${rows.length !== all.length ? ` / 全部 ${all.length} 部` : ""} · 已看 ${totalWatched} 集</div>`;
+}
+
+function buildExportDetailHTML(rows, all) {
+  const stMap = { watching: ["追番中", "tag-watching"], finished: ["已看完", "tag-finished"], abandoned: ["已弃番", "tag-abandoned"] };
+  const count = { watching: 0, finished: 0, abandoned: 0, scored: 0 };
+  let totalWatched = 0;
+  rows.forEach(({ a, d }) => {
+    if (d.status === "watching") count.watching++;
+    else if (d.status === "finished") count.finished++;
+    else if (d.status === "abandoned") count.abandoned++;
+    if (calcAvg(d.scores)) count.scored++;
+    const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+    totalWatched += watched.length;
+  });
+
+  const stats = [
+    [all.length, "追番总计", "#5c4a3d"],
+    [count.watching, "追番中", "#5f7350"],
+    [count.finished, "已看完", "#5a7185"],
+    [count.abandoned, "已弃番", "#b06a5a"],
+    [count.scored, "已评分", "#c09a5b"],
+    [totalWatched, "已看集数", "#7d8f69"]
+  ].map(([n, l, c]) => `<div class="ex-stat"><div class="n" style="color:${c}">${n}</div><div class="l">${l}</div></div>`).join("");
+
+  const cards = rows.map(({ a, d }) => {
+    const watched = (d.episodes && d.episodes[a.id] && d.episodes[a.id].watched) || [];
+    const avg = calcAvg(d.scores);
+    const avgEp = epAvgOf(d, a);
+    const s = d.scores || {};
+    const open = s.open;
+    const fin = s.final;
+    const epScores = (d.episodes && d.episodes[a.id] && d.episodes[a.id].epScores) || {};
+    const [label, cls] = (stMap[d.status] || ["未标记", "tag-none"]);
+
+    const cover = a.cover
+      ? `<img src="${a.cover}" crossorigin="anonymous" alt="${a.title || ""}" class="exd-thumb" loading="eager" onerror="this.outerHTML='<div class=&quot;cover-emoji&quot; style=&quot;width:44px;height:56px;border-radius:6px;background:${softGradient(a.gradient[0], a.gradient[1])};font-size:20px&quot;>${a.emoji || '🎬'}</div>'">`
+      : `<div class="cover-emoji" style="width:44px;height:56px;border-radius:6px;background:${softGradient(a.gradient[0], a.gradient[1])};font-size:20px">${a.emoji || '🎬'}</div>`;
+
+    const epCells = Array.from({ length: a.episodes }, (_, i) => i + 1).map(i => {
+      const sc = epScores[i];
+      const done = watched.includes(i);
+      return `<div class="exd-ep-cell">
+        <span class="exd-ep-t">EP${i} ${done ? "已看" : "未看"}</span>
+        ${sc ? `<span class="exd-ep-score">${fmtStars(sc.score)} ${fmtScore(sc.score)}分</span>` : ""}
+        ${sc && sc.comment ? `<span class="exd-ep-cmt">“${escapeAttr(sc.comment)}”</span>` : ""}
+      </div>`;
+    }).join("");
+
+    const comments = [];
+    const abanCmt = d.status === "abandoned" ? String(d.abandonedComment || "").trim() : "";
+    if (abanCmt) comments.push(`<div class="exd-comment"><span class="exd-ctag">弃番</span><span class="exd-ctxt">“${escapeAttr(abanCmt)}”</span></div>`);
+    if (open && open.comment) comments.push(`<div class="exd-comment"><span class="exd-ctag">开播前</span><span class="exd-ctxt">“${escapeAttr(open.comment)}”</span></div>`);
+    if (fin && fin.comment) comments.push(`<div class="exd-comment"><span class="exd-ctag">完结</span><span class="exd-ctxt">“${escapeAttr(fin.comment)}”</span></div>`);
+    Object.keys(epScores).sort((x, y) => x - y).forEach(i => {
+      const sc = epScores[i];
+      if (sc && sc.comment) comments.push(`<div class="exd-comment"><span class="exd-ctag">EP${i}</span><span class="exd-ctxt">“${escapeAttr(sc.comment)}”</span></div>`);
+    });
+
+    return `<div class="exd-row">
+      <div class="exd-head">
+        ${cover}
+        <div class="exd-main">
+          <div class="exd-title-line">
+            <span class="exd-title">${a.title}</span>
+            <span class="tag ${cls}">${label}</span>
+            ${avg ? `<span class="exd-score">★ ${avg}</span>` : ""}
+          </div>
+          <div class="exd-meta">${dateStr(a)} · ${a.episodes}集 · ${watched.length}/${a.episodes} 已看</div>
+        </div>
+      </div>
+      <div class="exd-body">
+        <div class="exd-blocks">
+          ${open && open.score ? `<div class="exd-block"><div class="exd-blabel">开播前预期</div><div class="exd-bval" style="color:#c09a5b">${fmtStars(open.score)} ${fmtScore(open.score)}分</div>${open.comment ? `<div class="exd-bcmt">“${escapeAttr(open.comment)}”</div>` : ""}</div>` : ""}
+          ${avgEp ? `<div class="exd-block"><div class="exd-blabel">各集平均</div><div class="exd-bval" style="color:#7d8f69">${avgEp}分</div></div>` : ""}
+          ${fin && fin.score ? `<div class="exd-block"><div class="exd-blabel">完结</div><div class="exd-bval" style="color:#5a7185">${fmtStars(fin.score)} ${fmtScore(fin.score)}分</div>${fin.comment ? `<div class="exd-bcmt">“${escapeAttr(fin.comment)}”</div>` : ""}</div>` : ""}
+        </div>
+        <div class="exd-section-title">各集评分</div>
+        <div class="exd-ep-grid">${epCells}</div>
+        <div class="exd-section-title">所有评论</div>
+        <div class="exd-comments">${comments.length ? comments.join("") : `<div class="exd-comment"><span class="exd-ctxt">还没有写任何评论</span></div>`}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const todayStr = new Date().toLocaleDateString();
+  return `
+    <div class="ex-head">
+      <div><div class="ex-title">我的追番清单</div><div class="ex-sub">DPCCA 追番评分库 · ${todayStr}</div></div>
+      <div class="ex-emoji">📋</div>
+    </div>
+    <div class="ex-stats">${stats}</div>
+    <div class="exd-list">${cards}</div>
+    <div class="ex-foot">共 ${rows.length} 部${rows.length !== all.length ? ` / 全部 ${all.length} 部` : ""} · 已看 ${totalWatched} 集</div>`;
+}
+
+async function openExportPreview() {
+  const el = $("summaryCard");
+  if (el.querySelector(".empty")) { toast("还没有内容可导出", true); return; }
+  if (exporting) return;
+  exporting = true;
+  let holder = null;
+  try {
+    // 导出始终排除隐藏项（即使界面开启了「显示隐藏项」）
+    const all = myRecordList().filter(({ d }) => !d.hidden);
+    const rows = pfApplySort(pfFiltered(all));
+    // 显示导出中遮罩，避免用户看到背后的 holder
+    showExportLoading();
+    // 在屏幕外构建专用导出 DOM（html2canvas 兼容的基础布局）
+    holder = document.createElement("div");
+    holder.id = "exportHolder";
+    // 使用 html-to-image（SVG foreignObject 原生渲染）导出。
+    // 将 holder 放在视口内但由导出中弹窗遮住，确保 foreignObject 能正常渲染；截图后再移除。
+    holder.style.cssText = "position:fixed;top:0;left:0;width:880px;z-index:1;background:#fffaf3;pointer-events:none;";
+    holder.innerHTML = pfView === "detail" ? buildExportDetailHTML(rows, all) : buildExportHTML(rows, all);
+    document.body.appendChild(holder);
+    // 等待字体、图片加载，避免截图时缺字/缺图
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    await Promise.all(Array.from(holder.querySelectorAll("img")).map(img => img.complete ? Promise.resolve() : new Promise(resolve => { img.onload = resolve; img.onerror = resolve; })));
+    await new Promise(r => requestAnimationFrame(r));
+    void holder.getBoundingClientRect();
+    await new Promise(r => setTimeout(r, 80));
+    const dataUrl = await htmlToImage.toPng(holder, { pixelRatio: 2, backgroundColor: "#fffaf3", cacheBust: true, useCORS: true });
+    exportCanvas = null;
+    exportDataUrl = dataUrl;
+    closeExportLoading();
+    $("exportPreviewImg").innerHTML = `<img src="${dataUrl}" style="max-width:100%;border-radius:10px;display:block">`;
+    $("exportPreviewModal").classList.add("show");
+    document.body.style.overflow = "hidden";
+  } catch (e) {
+    console.error(e);
+    closeExportLoading();
+    toast("导出失败: " + (e && e.message ? e.message : String(e)), true);
+  } finally {
+    if (holder) holder.remove();
+    exporting = false;
+  }
+}
+
+function showExportLoading() {
+  $("exportLoadingModal").classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+
+function closeExportLoading() {
+  $("exportLoadingModal").classList.remove("show");
+  document.body.style.overflow = "";
+}
+
+function closeExportPreview() {
+  $("exportPreviewModal").classList.remove("show");
+  document.body.style.overflow = "";
+}
+
+function downloadSummary() {
+  if (!exportDataUrl) { toast("请先生成预览", true); return; }
+  const link = document.createElement("a");
+  link.download = "DPCCA_我的追番清单.png";
+  link.href = exportDataUrl;
+  link.click();
+  toast("一图流已下载");
+}
+
+/* ============================================================
+ * 初始化
+ * ============================================================ */
+async function init() {
+  // 清理历史修复版残留的“幽灵身份”标记 dpcca_cloud_openid（现无代码读取，
+  // 删除可避免脏数据干扰后续诊断与登录态判断）
+  try { localStorage.removeItem("dpcca_cloud_openid"); } catch (e) {}
+  try {
+    library = await dataProvider.initAnimeData();
+  } catch (e) {
+    console.warn("云端番剧库加载失败，使用本地数据", e);
+    library = ANIME_LIBRARY;
+  }
+  try {
+    userData = await dataProvider.loadUserData();
+  } catch (e) {
+    console.warn("云端用户数据加载失败，使用空数据", e);
+    userData = {};
+  }
+  renderProfile();
+  updateCloudBadge();
+  healWallMissing();
+
+  // 弹窗背景点击关闭
+  document.querySelectorAll(".modal-overlay").forEach(ov => {
+    ov.addEventListener("click", (e) => {
+      if (e.target !== ov) return;
+      ov.classList.remove("show");
+      document.body.style.overflow = "";
+    });
+  });
+}
+
+/* 三端同步自愈：注册用户每次进入页面补同步缺失/不一致的墙行（会话内至多一次，延迟执行，由 reviews_api rebuild 幂等补齐） */
+function healWallMissing() {
+  try {
+    var rw = window.DpccaReviewWall;
+    if (!rw || typeof rw.isRegistered !== "function" || !rw.isRegistered() || typeof rw.rebuildOnce !== "function") return;
+    var uid = "";
+    try { uid = String(rw.getUid ? rw.getUid() : ""); } catch (e) { /* ignore */ }
+    if (!/^D\d+$/.test(uid)) return;
+    var k = "dpcca_rw_heal_" + uid;
+    try { if (sessionStorage.getItem(k)) return; } catch (e) { /* ignore */ }
+    setTimeout(function () {
+      try {
+        var pr = rw.rebuildOnce(true, true);
+        if (pr && typeof pr.then === "function") {
+          pr.then(function (res) {
+            if (res && res.ok) { try { sessionStorage.setItem(k, "1"); } catch (e) { /* ignore */ } }
+          });
+        } else {
+          try { sessionStorage.setItem(k, "1"); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    }, 1200);
+  } catch (e) { /* 忽略 */ }
+}
+
+init();
+</script>
+
+<!-- 数据来源署名（CC BY-NC-SA 4.0 合规声明） -->
+<footer style="max-width:72rem;margin:40px auto 24px;padding:0 16px;text-align:center">
+  <p style="font-size:11px;line-height:1.8;color:#8a8078;margin:0">
+    番剧资料基于「<a href="http://yuc.wiki/202610/" target="_blank" rel="noopener noreferrer" style="color:#a08e76;text-decoration:underline;text-underline-offset:2px">長門有C</a>」的素材衍生，采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" target="_blank" rel="noopener noreferrer" style="color:#a08e76;text-decoration:underline;text-underline-offset:2px">CC BY-NC-SA 4.0</a> 协议授权。<br>
+    © DPCCA · 测试版 v3.1（2026-09-15）
+  </p>
+</footer>
+</body>
+</html>

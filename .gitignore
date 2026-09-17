@@ -1,0 +1,51 @@
+# ============================================================
+# DPCCA 仓库忽略规则
+# 原则：只提交「源码 + 文档」，不提交凭据、依赖、交付产物、爬取素材。
+# ============================================================
+
+# ---------- 敏感文件：绝对禁止提交 ----------
+# CloudBase 自定义登录私钥（明文 RSA 私钥，泄露可伪造登录票据）
+tcb_custom_login.json
+**/tcb_custom_login.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+
+# ---------- 依赖 ----------
+node_modules/
+**/node_modules/
+
+# ---------- 交付产物 / 归档（不进版本库）----------
+releases/
+*.zip
+*.7z
+*.tar.bz2
+
+# ---------- 爬取素材（314 张封面图，74 MB）----------
+_crawl/
+
+# ---------- 本地备份 / 本地预览 ----------
+Dpcca/_backup_20260904/
+*.bak
+*.orig
+
+# ---------- IDE / AI 工具配置 ----------
+.codebuddy/
+.idea/
+.vscode/
+*.code-workspace
+
+# ---------- 系统与编辑器噪声 ----------
+Thumbs.db
+Desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+*.log
+*.tmp
+*.swp

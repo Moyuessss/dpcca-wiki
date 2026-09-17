@@ -1,0 +1,25 @@
+# 统一换行符处理，避免 Windows 上 CRLF/LF 互相污染
+
+# 默认：由 git 自动判断文本文件，检出时保持仓库内的 LF
+* text=auto eol=lf
+
+# 明确要求 LF 的脚本（CloudBase 自定义运行时启动脚本，
+# 若被转成 CRLF 会导致线上函数启动失败）
+scf_bootstrap text eol=lf
+*.sh text eol=lf
+
+# 源码与文档：LF
+*.js text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+
+# 二进制资源不做任何转换
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
