@@ -144,6 +144,10 @@ ADMIN_PASSWORD=你的管理员密码
     └── anime-api-src/      # 番剧资料 API
 ```
 
+## 目前已部署链接
+
+https://dpcca-wiki-d7g0dl19y23cd30f3-1466587016.tcloudbaseapp.com/index.html
+
 ## 数据来源声明
 
 站内番剧资料基于「長門有C（[yuc.wiki](https://yuc.wiki)）」素材按 CC BY-NC-SA 4.0 协议衍生，二次使用请遵循[该协议](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh)。
