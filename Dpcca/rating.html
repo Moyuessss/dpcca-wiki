@@ -230,7 +230,7 @@
       </div>
     </div>
     <div class="flex items-center gap-3">
-      <span class="hidden sm:inline-flex items-center" style="gap:3px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;line-height:14px;letter-spacing:.3px;color:#6b4f2a;background:linear-gradient(90deg,#eeddb8,#dcbf8a);border:1px solid #cdab72;white-space:nowrap" title="DPCCA · 测试版 v3.1（2026-09-15）">测试版 v3.1</span>
+      <span class="hidden sm:inline-flex items-center" style="gap:3px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;line-height:14px;letter-spacing:.3px;color:#6b4f2a;background:linear-gradient(90deg,#eeddb8,#dcbf8a);border:1px solid #cdab72;white-space:nowrap" title="DPCCA · 测试版 v4.0（2026-09-22）">测试版 v4.0</span>
       <span id="cloudBadge" class="cloud-badge off"><i class="fa-solid fa-cloud"></i><span>连接中</span></span>
       <a href="index.html" class="btn btn-primary nav-hide-mobile"><i class="fa-solid fa-book"></i> 追番评分库</a>
     </div>
@@ -1216,12 +1216,13 @@ function renderPresetChips() {
   if (!ratingPresets.length) { wrap.style.display = "none"; return; }
   wrap.style.display = "";
   box.innerHTML = ratingPresets.map((p, i) =>
-    `<button type="button" class="btn !py-1 !px-2.5" style="padding:4px 9px;font-size:11px;line-height:1.4" title="点击应用该筛选" onclick="applyPreset(${i})"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-400"></i>${esc(p.name || "预设")}</button>`
+    `<button type="button" class="btn !py-1 !px-2.5" style="padding:4px 9px;font-size:11px;line-height:1.4" title="一键应用：筛选 + 番剧勾选 + 评分顺序" onclick="applyPreset(${i})"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-400"></i>${esc(p.name || "预设")}</button>`
   ).join("");
 }
 
-/* 点击预设：填入筛选草稿并直接应用（默认全选命中番剧） */
-function applyPreset(i) {
+/* 点击预设：一键应用筛选 + 番剧勾选 + 评分顺序（v4.0）
+ * 预设未勾选番剧（无 animeIds）时保持旧行为：自动全选命中番剧 */
+async function applyPreset(i) {
   const p = ratingPresets[i];
   if (!p || !room) return;
   const c = p.config || {};
@@ -1235,11 +1236,26 @@ function applyPreset(i) {
   $("cfgMaxScore").value = draftMaxScore;
   document.querySelectorAll(".mode-cb").forEach(cb => cb.checked = draftModes.includes(cb.value));
   draftFiltersChanged = true;
-  draftIdsTouched = false;                           // 应用配置时自动全选命中番剧
+  draftIdsTouched = false;                           // 应用配置时默认全选命中番剧
   renderCfgTabs();
   updateCfgDraftHint();
-  applyConfig();
-  toast(`已应用预设「${p.name}」`);
+  await applyConfig();
+  if (!configApplied()) return;                      // 命中为空等场景：applyConfig 已提示，直接终止
+
+  // 预设自带勾选与评分顺序：以 animeIds 覆盖默认的全选命中
+  const presetIds = Array.isArray(c.animeIds) ? c.animeIds : [];
+  if (presetIds.length) {
+    const matched = library.filter(roomMatch).map(a => a.id);
+    const ids = presetIds.filter(id => matched.includes(id));   // 不在当前筛选命中内的 id 忽略
+    if (ids.length) {
+      room.selectedIds = ids;                     // 顺序 = 预设里的排序
+      draftSelectedIds = [...ids];
+      draftIdsTouched = false;
+      await saveRoom();
+      renderAnimeSelect();
+    }
+  }
+  toast(`已应用预设「${p.name}」` + ((room.selectedIds || []).length ? `，共 ${room.selectedIds.length} 部` : ""));
 }
 
 /* ============================================================
@@ -2632,7 +2648,7 @@ initEntry();
 <footer style="max-width:72rem;margin:40px auto 24px;padding:0 16px;text-align:center">
   <p style="font-size:11px;line-height:1.8;color:#8a8078;margin:0">
     番剧资料基于「<a href="http://yuc.wiki/202610/" target="_blank" rel="noopener noreferrer" style="color:#a08e76;text-decoration:underline;text-underline-offset:2px">長門有C</a>」的素材衍生，采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" target="_blank" rel="noopener noreferrer" style="color:#a08e76;text-decoration:underline;text-underline-offset:2px">CC BY-NC-SA 4.0</a> 协议授权。<br>
-    © DPCCA · 测试版 v3.1（2026-09-15）
+    © DPCCA · 测试版 v4.0（2026-09-22）
   </p>
 </footer>
 </body>

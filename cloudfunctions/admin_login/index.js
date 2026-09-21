@@ -692,6 +692,7 @@ async function configSave(p, admin) {
 /* =====================================================================
  * 评分预设（v4.0）—— site_config 单文档 doc("rating_presets")
  *   { list: [{ name, config, updatedAt, updatedBy }] }
+ *   config 含 years / months / quarters / sources / types / maxScore / modes / animeIds（有序勾选）
  * 前台 rating.html 直读该文档（集合 read=true），写入仅经本函数。
  * ===================================================================== */
 async function readPresets() {
@@ -706,6 +707,8 @@ function sanitizePresetConfig(c) {
   const strArr = v => (Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean) : []);
   const modes = strArr(c.modes).filter(m => ["expect", "eps", "final"].includes(m));
   const ms = Number(c.maxScore);
+  // animeIds：预设自带的番剧勾选与评分顺序（有序 id 数组；空 = 前台应用时全选命中番剧）
+  const animeIds = strArr(c.animeIds).filter(s => s.length <= 64).slice(0, 500);
   return {
     years: numArr(c.years),
     months: numArr(c.months),
@@ -714,6 +717,7 @@ function sanitizePresetConfig(c) {
     types: strArr(c.types),
     maxScore: [5, 10, 100].includes(ms) ? ms : 10,
     modes: modes.length ? modes : ["expect", "eps", "final"],
+    animeIds,
   };
 }
 
