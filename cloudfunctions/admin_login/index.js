@@ -50,6 +50,13 @@
  *                      data.content 公告正文（纯文本，<= 2000 字）
  *   单文档 doc("announcement")：{ enabled, content, updatedAt, updatedBy }
  *   前台 announcement.js 直读该文档，写入仅经本函数，客户端不可写。
+ *
+ * 评分预设（v4.0，site_config 同集合）：
+ *   action=presetList    读取评分室预设列表（任意管理员）
+ *   action=presetSave    新增（data.index 为空）或修改（data.index 为序号）预设
+ *   action=presetDelete  删除指定序号的预设
+ *   单文档 doc("rating_presets")：{ list: [{ name, config, updatedAt, updatedBy }] }
+ *   前台 rating.html 直读该文档（read=true），写入仅经本函数。
  */
 const tcb = require("@cloudbase/node-sdk");
 const crypto = require("crypto");
@@ -638,6 +645,7 @@ async function feedbackDelete(id) {
  * ===================================================================== */
 const CONFIG_DOC = "announcement";
 const ANN_CONTENT_MAX = 2000;
+const PRESET_DOC = "rating_presets";   // 评分室预设（v4.0）：单文档 { list: [...] }
 
 async function configGet() {
   const res = await db.collection(SITE_CONFIG).doc(CONFIG_DOC).get().catch(() => null);
@@ -679,6 +687,75 @@ async function configSave(p, admin) {
     };
   }
   return { ok: true, config: { enabled, content, updatedAt: now, updatedBy } };
+}
+
+/* =====================================================================
+ * 评分预设（v4.0）—— site_config 单文档 doc("rating_presets")
+ *   { list: [{ name, config, updatedAt, updatedBy }] }
+ * 前台 rating.html 直读该文档（集合 read=true），写入仅经本函数。
+ * ===================================================================== */
+async function readPresets() {
+  const res = await db.collection(SITE_CONFIG).doc(PRESET_DOC).get().catch(() => null);
+  const doc = res ? rvPick(res.data) : null;
+  return (doc && Array.isArray(doc.list)) ? doc.list : [];
+}
+
+function sanitizePresetConfig(c) {
+  c = c || {};
+  const numArr = v => (Array.isArray(v) ? v.map(n => Number(n)).filter(n => !!n) : []);
+  const strArr = v => (Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean) : []);
+  const modes = strArr(c.modes).filter(m => ["expect", "eps", "final"].includes(m));
+  const ms = Number(c.maxScore);
+  return {
+    years: numArr(c.years),
+    months: numArr(c.months),
+    quarters: numArr(c.quarters),
+    sources: strArr(c.sources),
+    types: strArr(c.types),
+    maxScore: [5, 10, 100].includes(ms) ? ms : 10,
+    modes: modes.length ? modes : ["expect", "eps", "final"],
+  };
+}
+
+async function presetList() {
+  return { ok: true, list: await readPresets() };
+}
+
+async function presetSave(p, admin) {
+  const name = String((p && p.name) || "").trim();
+  if (!name) return { ok: false, message: "请填写预设名称" };
+  if (name.length > 30) return { ok: false, message: "预设名称最多 30 字" };
+  const cfg = sanitizePresetConfig(p.config);
+  const list = await readPresets();
+  if (list.length >= 50) return { ok: false, message: "预设最多 50 个，请先删除部分预设" };
+  const idx = Number(p.index);
+  const item = {
+    name,
+    config: cfg,
+    updatedAt: Date.now(),
+    updatedBy: (admin && admin.accountName) || "",
+  };
+  if (Number.isInteger(idx) && idx >= 0 && idx < list.length) list[idx] = item;
+  else list.push(item);
+  try {
+    await db.collection(SITE_CONFIG).doc(PRESET_DOC).set({ list });
+  } catch (e) {
+    return { ok: false, message: "保存失败：" + (e.message || e) };
+  }
+  return { ok: true, list };
+}
+
+async function presetDelete(idx) {
+  const i = Number(idx);
+  const list = await readPresets();
+  if (!Number.isInteger(i) || i < 0 || i >= list.length) return { ok: false, message: "预设不存在" };
+  list.splice(i, 1);
+  try {
+    await db.collection(SITE_CONFIG).doc(PRESET_DOC).set({ list });
+  } catch (e) {
+    return { ok: false, message: "删除失败：" + (e.message || e) };
+  }
+  return { ok: true, list };
 }
 
 exports.main = async (event) => {
@@ -749,6 +826,16 @@ exports.main = async (event) => {
 
       case "configSave":
         return await configSave(data || {}, admin);
+
+      /* ---------- 评分预设（site_config · rating_presets） ---------- */
+      case "presetList":
+        return await presetList();
+
+      case "presetSave":
+        return await presetSave(data || {}, admin);
+
+      case "presetDelete":
+        return await presetDelete(data && data.index);
 
       /* ---------- 评分/评论墙（anime_reviews） ---------- */
       case "reviewList":

@@ -119,6 +119,7 @@
       <button class="btn btn-ghost nav-link" id="navBtn-reviews" onclick="showView('reviews')"><i class="fa-solid fa-comments"></i><span class="hidden sm:inline">评分与评论</span></button>
       <button class="btn btn-ghost nav-link" id="navBtn-feedback" onclick="showView('feedback')"><i class="fa-solid fa-envelope-open-text"></i><span class="hidden sm:inline">用户反馈</span></button>
       <button class="btn btn-ghost nav-link" id="navBtn-config" onclick="showView('config')"><i class="fa-solid fa-bullhorn"></i><span class="hidden sm:inline">公告弹窗</span></button>
+      <button class="btn btn-ghost nav-link" id="navBtn-presets" onclick="showView('presets')"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="hidden sm:inline">评分预设</span></button>
       <button class="btn btn-ghost nav-link" id="navBtn-admins" onclick="showView('admins')"><i class="fa-solid fa-key"></i><span class="hidden sm:inline">管理员</span></button>
       <a class="btn btn-ghost flex-none" href="index.html"><i class="fa-solid fa-star"></i><span class="hidden lg:inline">评分库</span></a>
       <a class="btn btn-ghost flex-none" href="profile.html"><i class="fa-solid fa-list"></i><span class="hidden lg:inline">我的追番</span></a>
@@ -375,6 +376,72 @@
     </div>
   </div>
 
+  <!-- ========== 评分预设（v4.0 新增） ========== -->
+  <div id="view-presets" class="hidden">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <div class="text-xl font-bold">评分预设</div>
+        <div class="text-sm" style="color:var(--muted)">联合评分室房主配置区的一键筛选模板（site_config · rating_presets 文档，前台只读）</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadPresets()"><i class="fa-solid fa-rotate"></i> 刷新</button>
+    </div>
+
+    <!-- 预设编辑 -->
+    <div class="card p-5 mb-5">
+      <div class="font-bold mb-1" id="presetFormTitle">新增预设</div>
+      <div class="text-xs mb-4" style="color:var(--muted)">前台房主点击预设名即自动填入以下筛选并勾选命中番剧；留空的维度表示「全部」。</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <div class="lbl">预设名称（前台按钮显示的文字）</div>
+          <input id="prName" class="inp" maxlength="30" placeholder="如：2026 春季新番">
+        </div>
+        <div>
+          <div class="lbl">年份（逗号分隔，如 2026, 2025；留空 = 全部）</div>
+          <input id="prYears" class="inp" placeholder="2026">
+        </div>
+        <div>
+          <div class="lbl">开播月份（逗号分隔，如 4, 7；留空 = 全部）</div>
+          <input id="prMonths" class="inp" placeholder="4">
+        </div>
+        <div>
+          <div class="lbl">季度（1=冬 2=春 3=夏 4=秋，逗号分隔；留空 = 全部）</div>
+          <input id="prQuarters" class="inp" placeholder="2">
+        </div>
+        <div>
+          <div class="lbl">来源（逗号分隔，如 漫画改, 原创；留空 = 全部）</div>
+          <input id="prSources" class="inp" placeholder="漫画改, 原创">
+        </div>
+        <div>
+          <div class="lbl">类型（逗号分隔：TV动画 / 剧场版 / OVA；留空 = 全部）</div>
+          <input id="prTypes" class="inp" placeholder="TV动画">
+        </div>
+        <div>
+          <div class="lbl">分数上限</div>
+          <select id="prMaxScore" class="inp">
+            <option value="5">5 分制</option>
+            <option value="10" selected>10 分制</option>
+            <option value="100">100 分制</option>
+          </select>
+        </div>
+        <div>
+          <div class="lbl">评分模式（按勾选顺序依次进行）</div>
+          <div class="flex flex-wrap gap-3 pt-2">
+            <label class="flex items-center gap-1.5"><input type="checkbox" class="pr-mode" value="expect" checked> 开播前预期分</label>
+            <label class="flex items-center gap-1.5"><input type="checkbox" class="pr-mode" value="eps" checked> 各集评分</label>
+            <label class="flex items-center gap-1.5"><input type="checkbox" class="pr-mode" value="final" checked> 完结评分</label>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-4 flex-wrap">
+        <button class="btn btn-primary" onclick="savePreset()"><i class="fa-solid fa-floppy-disk"></i> 保存预设</button>
+        <button class="btn btn-ghost" onclick="clearPresetForm()"><i class="fa-solid fa-eraser"></i> 清空表单</button>
+      </div>
+    </div>
+
+    <!-- 预设列表 -->
+    <div id="presetList" class="space-y-3"></div>
+  </div>
+
   <!-- ========== 用户反馈 ========== -->
   <div id="view-feedback" class="hidden">
     <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
@@ -539,6 +606,14 @@
           <input id="fTags" class="inp" placeholder="科幻, 冒险">
         </div>
         <div>
+          <div class="lbl">系列名（同系列季度关联，留空表示独立番）</div>
+          <input id="fSeries" class="inp" placeholder="如：雾都夜航">
+        </div>
+        <div>
+          <div class="lbl">第几季（同系列内排序）</div>
+          <input id="fSeasonNo" type="number" class="inp" min="0" max="99" placeholder="1">
+        </div>
+        <div>
           <div class="lbl">渐变起始色（无封面时背景）</div>
           <div class="flex gap-2">
             <input id="fGrad1" type="color" class="inp flex-1 h-10 p-1 cursor-pointer">
@@ -559,8 +634,13 @@
         </div>
         <div class="col-span-2">
           <div class="lbl">各集放送日期调整（停播/休播用，留空则自动按每周一集推算）</div>
-          <textarea id="fEpDates" class="inp" rows="3" placeholder="每行一集：集数=日期，如&#10;2=2026-01-12&#10;5=2026-02-09"></textarea>
-          <div class="text-xs mt-1" style="color:var(--muted)">默认第 1 集为开播日期，之后每周 +7 天自动推算。只需填写与默认不同的集数，日期格式支持 2026-01-12 或 1月12日。</div>
+          <textarea id="fEpDates" class="inp" rows="3" placeholder="每行一集：集数=日期，如&#10;2=2026-01-12&#10;5=2026-02-09" oninput="renderEpSchedule()"></textarea>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <button type="button" class="btn btn-ghost" style="font-size:12px" onclick="pauseThisWeek()"><i class="fa-solid fa-pause"></i> 本周停播（未播集顺延一周）</button>
+            <button type="button" class="btn btn-ghost" style="font-size:12px" onclick="resetEpDates()"><i class="fa-solid fa-rotate-left"></i> 重置推算（清除全部调整）</button>
+          </div>
+          <div id="epSchedulePreview" class="text-xs mt-2" style="color:var(--muted)"></div>
+          <div class="text-xs mt-1" style="color:var(--muted)">默认第 1 集为开播日期，之后每周 +7 天自动推算。只需填写与默认不同的集数，日期格式支持 2026-01-12 或 1月12日；「本周停播」会自动为尚未播出的每集 +7 天。</div>
         </div>
       </div>
 
@@ -959,17 +1039,156 @@ function previewAnnouncement() {
 }
 
 /* ============================================================
+ * 评分预设（v4.0 · site_config 的 rating_presets 文档）
+ * 数据结构：{ list: [{ name, config:{years,months,quarters,sources,types,maxScore,modes}, updatedAt, updatedBy }] }
+ * 读写均经 admin_login 云函数（presetList / presetSave / presetDelete）
+ * ============================================================ */
+let presetEditing = null;   // null = 新增；数字 = 编辑列表中的第几项
+
+const PRESET_MODE_LABEL = { expect: "开播前预期", eps: "各集评分", final: "完结评分" };
+
+function presetSummary(cfg) {
+  const c = cfg || {};
+  const part = (arr, unit) => (arr && arr.length ? arr.map(v => v + unit).join("、") : "全部");
+  const qMap = { 1: "冬", 2: "春", 3: "夏", 4: "秋" };
+  const q = (c.quarters || []).map(v => qMap[v] || v).join("、") || "全部";
+  const modes = (c.modes || []).map(m => PRESET_MODE_LABEL[m] || m).join(" + ");
+  return `${part(c.years, "年")} · ${part(c.months, "月")} · ${q}季 · ${part(c.sources, "")} · ${part(c.types, "")} · ${c.maxScore || 10}分制 · ${modes || "全部模式"}`;
+}
+
+async function loadPresets(quiet) {
+  try {
+    const res = await callAdmin("presetList", {});
+    if (!res.ok) throw new Error(res.message || "读取失败");
+    renderPresetList(res.list || []);
+    if (!quiet) toast("评分预设已加载");
+  } catch (e) {
+    console.error(e);
+    if (!quiet) toast("评分预设加载失败：" + (e.message || e), true);
+  }
+}
+
+function renderPresetList(list) {
+  const box = document.getElementById("presetList");
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = `<div class="card p-6 text-center text-sm" style="color:var(--muted)">还没有预设，在上方填写筛选条件并保存即可。</div>`;
+    return;
+  }
+  box.innerHTML = list.map((p, i) => `
+    <div class="card p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div class="min-w-0">
+        <div class="font-bold"><i class="fa-solid fa-wand-magic-sparkles mr-1" style="color:#a8732f"></i>${escAttr(p.name || "未命名")}</div>
+        <div class="text-xs mt-1" style="color:var(--muted)">${escAttr(presetSummary(p.config))}${p.updatedAt ? " · 更新于 " + new Date(p.updatedAt).toLocaleString() : ""}</div>
+      </div>
+      <div class="flex gap-2 flex-none">
+        <button class="btn btn-ghost btn-sm" onclick="editPreset(${i})"><i class="fa-solid fa-pen"></i> 编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePreset(${i})"><i class="fa-solid fa-trash"></i> 删除</button>
+      </div>
+    </div>`).join("");
+}
+
+function fillPresetForm(p) {
+  const c = (p && p.config) || {};
+  const csv = arr => (arr || []).join(", ");
+  document.getElementById("prName").value = (p && p.name) || "";
+  document.getElementById("prYears").value = csv(c.years);
+  document.getElementById("prMonths").value = csv(c.months);
+  document.getElementById("prQuarters").value = csv(c.quarters);
+  document.getElementById("prSources").value = csv(c.sources);
+  document.getElementById("prTypes").value = csv(c.types);
+  document.getElementById("prMaxScore").value = String(c.maxScore || 10);
+  document.querySelectorAll(".pr-mode").forEach(cb => { cb.checked = !(c.modes || []).length || c.modes.includes(cb.value); });
+  document.getElementById("presetFormTitle").textContent = presetEditing === null ? "新增预设" : `编辑预设 #${presetEditing + 1}`;
+}
+
+function clearPresetForm() {
+  presetEditing = null;
+  fillPresetForm(null);
+  document.getElementById("prMaxScore").value = "10";
+  document.querySelectorAll(".pr-mode").forEach(cb => { cb.checked = true; });
+  document.getElementById("presetFormTitle").textContent = "新增预设";
+}
+
+function editPreset(i) {
+  // 需要当前列表数据：重新拉一次，避免本地缓存过期
+  loadPresetsSilentThenEdit(i);
+}
+
+async function loadPresetsSilentThenEdit(i) {
+  try {
+    const res = await callAdmin("presetList", {});
+    if (!res.ok) throw new Error(res.message || "读取失败");
+    const p = (res.list || [])[i];
+    if (!p) { toast("该预设不存在，可能已被删除", true); return; }
+    presetEditing = i;
+    fillPresetForm(p);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (e) {
+    toast("读取预设失败：" + (e.message || e), true);
+  }
+}
+
+function collectPresetConfig() {
+  const nums = id => document.getElementById(id).value.split(/[,，、\s]+/).map(s => Number(s)).filter(n => Number.isFinite(n) && n > 0);
+  const strs = id => document.getElementById(id).value.split(/[,，、]+/).map(s => s.trim()).filter(Boolean);
+  const modes = [...document.querySelectorAll(".pr-mode:checked")].map(cb => cb.value);
+  return {
+    years: nums("prYears"),
+    months: nums("prMonths"),
+    quarters: nums("prQuarters"),
+    sources: strs("prSources"),
+    types: strs("prTypes"),
+    maxScore: Number(document.getElementById("prMaxScore").value) || 10,
+    modes,
+  };
+}
+
+async function savePreset() {
+  const name = document.getElementById("prName").value.trim();
+  if (!name) { toast("请填写预设名称", true); return; }
+  const config = collectPresetConfig();
+  if (!config.modes.length) { toast("请至少选择一种评分模式", true); return; }
+  if (!config.years.length && !config.months.length && !config.quarters.length && !config.sources.length && !config.types.length) {
+    if (!confirm("所有筛选维度都是「全部」，该预设会命中番剧库全部番剧，确认保存？")) return;
+  }
+  try {
+    const res = await callAdmin("presetSave", { index: presetEditing, name, config });
+    if (!res.ok) throw new Error(res.message || "保存失败");
+    toast(presetEditing === null ? "预设已新增" : "预设已更新");
+    clearPresetForm();
+    renderPresetList(res.list || []);
+  } catch (e) {
+    toast("保存失败：" + (e.message || e), true);
+  }
+}
+
+async function deletePreset(i) {
+  if (!confirm(`确认删除预设 #${i + 1}？删除后前台立即失效，此操作无法恢复。`)) return;
+  try {
+    const res = await callAdmin("presetDelete", { index: i });
+    if (!res.ok) throw new Error(res.message || "删除失败");
+    toast("预设已删除");
+    if (presetEditing === i) clearPresetForm();
+    renderPresetList(res.list || []);
+  } catch (e) {
+    toast("删除失败：" + (e.message || e), true);
+  }
+}
+
+/* ============================================================
  * 视图切换
  * ============================================================ */
 function showView(view) {
   currentView = view;
-  ["home", "anime", "users", "reviews", "feedback", "config", "admins"].forEach(v => {
+  ["home", "anime", "users", "reviews", "feedback", "config", "presets", "admins"].forEach(v => {
     const el = document.getElementById("view-" + v);
     if (el) el.classList.toggle("hidden", v !== view);
     const nav = document.getElementById("navBtn-" + v);
     if (nav) nav.classList.toggle("active", v === view);
   });
   if (view === "anime") init();
+  if (view === "presets") loadPresets();
   if (view === "users") renderUsers();
   if (view === "reviews") renderReviews();
   if (view === "feedback") loadFeedback(true);
@@ -1147,8 +1366,11 @@ function openEditor(docId) {
   v("fDesc", d.desc || "");
   v("fKeywords", d.keywords || "");
   v("fPvUrl", d.pvUrl || "");
+  v("fSeries", d.series || "");
+  v("fSeasonNo", d.seasonNo || "");
   v("fEpDates", epDatesToText(d.epDates));
   renderStaffRows(staff);
+  renderEpSchedule();
   refreshCover();
   document.getElementById("editorModal").classList.add("show");
 }
@@ -1233,6 +1455,8 @@ function collect() {
     desc: document.getElementById("fDesc").value.trim(),
     keywords: document.getElementById("fKeywords").value.trim(),
     pvUrl: document.getElementById("fPvUrl").value.trim(),
+    series: document.getElementById("fSeries").value.trim(),          // v4.0：系列季度关联
+    seasonNo: parseInt(document.getElementById("fSeasonNo").value, 10) || 0,
     epDates: collectEpDates(),
     staff: collectStaff()
   };
@@ -1307,13 +1531,21 @@ function fmtEpDate(s) {
 /* 从 textarea 收集：每行「集数=日期」，仅保留合法集号 */
 function collectEpDates() {
   const out = {};
+  const baseYear = parseInt(document.getElementById("fYear").value, 10) || 0;
   const rows = document.getElementById("fEpDates").value.split(/\n/).map(s => s.trim()).filter(Boolean);
   rows.forEach(row => {
     const m = /^(\d+)\s*[=:]\s*(.+)$/.exec(row);
     if (m) {
       const ep = parseInt(m[1], 10);
+      if (ep <= 0) return;
+      // v4.0：跨年集保留年份（如 2027年1月12日），前台才能正确显示
+      const ym = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(m[2]);
+      if (ym && baseYear && +ym[1] !== baseYear) {
+        out[ep] = `${+ym[1]}年${+ym[2]}月${+ym[3]}日`;
+        return;
+      }
       const d = fmtEpDate(m[2]);
-      if (ep > 0 && d) out[ep] = d;
+      if (d) out[ep] = d;
     }
   });
   return Object.keys(out).length ? out : null;
@@ -1322,6 +1554,102 @@ function collectEpDates() {
 function epDatesToText(epDates) {
   if (!epDates) return "";
   return Object.entries(epDates).map(([ep, d]) => `${ep}=${d}`).join("\n");
+}
+
+/* ============================================================
+ * 本周停播一键顺延（v4.0）
+ * 逻辑：以今天为界，找到第一集「未播出」的集数，从该集起每集 +7 天，
+ * 与默认推算不同的集写回 textarea（可再手工微调），保存后生效。
+ * ============================================================ */
+/* 解析日期串为 {y,m,d}："Y年M月D日" / "M月D日" / "Y-M-D"，无年份用番剧年份兜底 */
+function parseEpDateStr(s, baseYear) {
+  const t = String(s || "").trim();
+  if (!t) return null;
+  let m = /(\d{4})年(\d{1,2})月(\d{1,2})日/.exec(t);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3] };
+  m = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(t);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3] };
+  m = /(\d{1,2})月(\d{1,2})日/.exec(t);
+  if (m) return { y: baseYear || 2026, m: +m[1], d: +m[2] };
+  m = /(\d{1,2})[-/.](\d{1,2})/.exec(t);
+  if (m) return { y: baseYear || 2026, m: +m[1], d: +m[2] };
+  return null;
+}
+/* 按当前表单（年份/月份/日期/集数/textarea）计算完整放送时间表 */
+function adminEpSchedule() {
+  const baseYear = parseInt(document.getElementById("fYear").value, 10) || 2026;
+  const month = parseInt(document.getElementById("fMonth").value, 10) || 1;
+  const day = parseInt(document.getElementById("fDay").value, 10) || 1;
+  const N = parseInt(document.getElementById("fEpisodes").value, 10) || 0;
+  const ov = {};
+  document.getElementById("fEpDates").value.split(/\n/).forEach(row => {
+    const m = /^(\d+)\s*[=:]\s*(.+)$/.exec(row.trim());
+    if (m) {
+      const p = parseEpDateStr(m[2], baseYear);
+      if (p) ov[parseInt(m[1], 10)] = p;
+    }
+  });
+  const list = [];
+  for (let i = 1; i <= N; i++) {
+    const def = new Date(baseYear, month - 1, day + (i - 1) * 7);
+    const use = ov[i] || { y: def.getFullYear(), m: def.getMonth() + 1, d: def.getDate() };
+    list.push({ ep: i, y: use.y, m: use.m, d: use.d, isOverride: !!ov[i] });
+  }
+  return list;
+}
+const fmtYMD = (p) => `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+/* 放送表预览：手动调整的集橙色高亮 */
+function renderEpSchedule() {
+  const box = document.getElementById("epSchedulePreview");
+  if (!box) return;
+  const list = adminEpSchedule();
+  if (!list.length) { box.innerHTML = ""; return; }
+  const cell = (e) => `<span style="${e.isOverride ? "color:#a8732f;font-weight:600" : ""}">EP${e.ep} ${e.m}月${e.d}日</span>`;
+  let html;
+  if (list.length <= 10) html = list.map(cell).join(" · ");
+  else html = list.slice(0, 6).map(cell).join(" · ") + " · … · " + list.slice(-2).map(cell).join(" · ");
+  box.innerHTML = "当前放送表：" + html + "（橙色 = 手动调整）";
+}
+/* 本周停播：未播集起每集顺延一周 */
+function pauseThisWeek() {
+  const list = adminEpSchedule();
+  if (!list.length) { toast("请先填写总集数", true); return; }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = list.findIndex(e => new Date(e.y, e.m - 1, e.d) >= today);
+  if (start === -1) { toast("该番剧已全部播完，无需停播", true); return; }
+  const ep = list[start].ep;
+  const from = list[start];
+  if (!confirm(`将从第 ${ep} 集（${from.m}月${from.d}日）开始顺延一周，之后每集依次 +7 天，确认？`)) return;
+  const baseYear = parseInt(document.getElementById("fYear").value, 10) || 2026;
+  const month = parseInt(document.getElementById("fMonth").value, 10) || 1;
+  const day = parseInt(document.getElementById("fDay").value, 10) || 1;
+  const lines = [];
+  for (let i = start; i < list.length; i++) {
+    const e = list[i];
+    const nd = new Date(e.y, e.m - 1, e.d + 7);
+    const def = new Date(baseYear, month - 1, day + (e.ep - 1) * 7);
+    // 只写与默认推算不同的集，保持数据精简
+    if (nd.getFullYear() !== def.getFullYear() || nd.getMonth() !== def.getMonth() || nd.getDate() !== def.getDate()) {
+      lines.push(`${e.ep}=${fmtYMD({ y: nd.getFullYear(), m: nd.getMonth() + 1, d: nd.getDate() })}`);
+    }
+  }
+  // 保留停播集之前已有的手动调整
+  const keep = [];
+  document.getElementById("fEpDates").value.split(/\n/).forEach(row => {
+    const m = /^(\d+)\s*[=:]\s*(.+)$/.exec(row.trim());
+    if (m && parseInt(m[1], 10) < ep) keep.push(`${parseInt(m[1], 10)}=${m[2].trim()}`);
+  });
+  document.getElementById("fEpDates").value = [...new Set([...keep, ...lines])].join("\n");
+  renderEpSchedule();
+  toast(`已顺延：第 ${ep} 集起每集 +7 天，保存后生效`);
+}
+/* 重置推算：清空全部手动调整 */
+function resetEpDates() {
+  if (!document.getElementById("fEpDates").value.trim()) { toast("当前没有手动调整"); return; }
+  if (!confirm("清除全部放送日期手动调整，恢复为「开播日 + 每周自动推算」？")) return;
+  document.getElementById("fEpDates").value = "";
+  renderEpSchedule();
+  toast("已恢复默认推算，保存后生效");
 }
 
 async function saveAnime() {

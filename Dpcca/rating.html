@@ -102,6 +102,12 @@
 
   .modal-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(92,74,61,.35); }
   .modal-overlay.show { display: flex; animation: fadeIn .25s ease; }
+  /* v4.0 评分顺序排序弹窗 */
+  .sort-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03); cursor: grab; user-select: none; }
+  .sort-item.dragging { opacity: .4; border-style: dashed; }
+  .sort-item .sort-idx { width: 22px; text-align: center; font-size: 11px; color: #a5b4fc; flex: none; }
+  .sort-item .sort-btn { background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 13px; padding: 2px 4px; border-radius: 6px; }
+  .sort-item .sort-btn:hover { background: rgba(255,255,255,.1); color: #e2e8f0; }
   .modal { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; animation: slideUp .35s cubic-bezier(.16,1,.3,1); }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -298,6 +304,11 @@
           <!-- 房间配置（仅房主） -->
           <div id="ownerConfig" class="glass p-4 mb-4">
             <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-gear mr-2 text-indigo-400"></i>房间配置（仅房主）</div>
+            <!-- 评分预设（v4.0：后台自定义，点击一键填入筛选） -->
+            <div id="presetWrap" class="mb-3" style="display:none">
+              <div class="text-xs text-gray-500 mb-1.5"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-400"></i>评分预设（点击一键应用）</div>
+              <div id="presetChips" class="flex flex-wrap gap-1.5"></div>
+            </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div>
                 <div class="text-xs text-gray-500 mb-1">年份（可多选）</div>
@@ -347,6 +358,7 @@
             <div class="flex flex-wrap gap-2 mt-3">
               <button class="btn" onclick="selectAllAnime()"><i class="fa-solid fa-check-double"></i> 全选</button>
               <button class="btn" onclick="deselectAllAnime()"><i class="fa-solid fa-square-minus"></i> 全不选</button>
+              <button class="btn" onclick="openSortModal()"><i class="fa-solid fa-arrow-down-short-wide"></i> 排序</button>
             </div>
           </div>
           <div class="text-xs text-gray-500 mb-2"><i class="fa-solid fa-circle-info mr-1"></i>房间信息</div>
@@ -429,6 +441,24 @@
   <div class="modal glass p-6 relative">
     <button onclick="closeAnimeInfo()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
     <div id="animeModalBody"></div>
+  </div>
+</div>
+
+<!-- 评分顺序排序弹窗（v4.0） -->
+<div id="sortModal" class="modal-overlay">
+  <div class="modal glass p-6 relative">
+    <button onclick="closeSortModal()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div class="font-semibold text-sm mb-1"><i class="fa-solid fa-arrow-down-short-wide mr-2 text-indigo-400"></i>评分顺序排序</div>
+    <div class="text-[11px] text-gray-500 mb-3">拖动卡片调整评分顺序（先上后下）；触屏设备可用卡片右侧 ↑↓ 按钮移动。顺序保存后立即生效。</div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button class="btn !py-1.5 !px-3 text-xs" onclick="quickSort('date')"><i class="fa-solid fa-calendar"></i> 按开播日期</button>
+      <button class="btn !py-1.5 !px-3 text-xs" onclick="quickSort('title')"><i class="fa-solid fa-font"></i> 按标题</button>
+    </div>
+    <div id="sortList" class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 mb-4"></div>
+    <div class="flex justify-end gap-2">
+      <button class="btn btn-ghost" onclick="closeSortModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveSortOrder()"><i class="fa-solid fa-check"></i> 保存顺序</button>
+    </div>
   </div>
 </div>
 
@@ -1024,7 +1054,10 @@ function hashPwd(s) {
 
 function quarterAnimes() {
   const base = library.filter(roomMatch);
-  if (room.selectedIds && room.selectedIds.length) return base.filter(a => room.selectedIds.includes(a.id));
+  /* v4.0：勾选顺序即评分顺序（排序弹窗保存后的 selectedIds 顺序优先于库顺序） */
+  if (room.selectedIds && room.selectedIds.length) {
+    return room.selectedIds.map(id => base.find(a => a.id === id)).filter(Boolean);
+  }
   return base;
 }
 
@@ -1155,6 +1188,157 @@ function selectAllAnime() {
 function deselectAllAnime() {
   document.querySelectorAll(".anime-select-cb").forEach(cb => cb.checked = false);
   onAnimeCbChange();
+}
+
+/* ============================================================
+ * 评分预设（v4.0）：后台 admin.html「评分预设」自定义，
+ * 存于 site_config 的 rating_presets 文档（集合规则 read=true，前台只读）
+ * ============================================================ */
+let ratingPresets = [];
+
+async function loadRatingPresets() {
+  try {
+    if (!dataProvider.USE_CLOUD) throw new Error("本地模式");
+    const db = await dataProvider._cloud._getDB();
+    const res = await db.collection("site_config").doc("rating_presets").get();
+    let d = res && res.data;
+    if (Array.isArray(d)) d = d[0];                  // 兼容 Web SDK 返回形态
+    ratingPresets = (d && Array.isArray(d.list)) ? d.list : [];
+  } catch (e) {
+    ratingPresets = [];                              // 未配置 / 无权限 / 离线：静默降级为不显示
+  }
+  renderPresetChips();
+}
+
+function renderPresetChips() {
+  const wrap = $("presetWrap"), box = $("presetChips");
+  if (!wrap || !box) return;
+  if (!ratingPresets.length) { wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  box.innerHTML = ratingPresets.map((p, i) =>
+    `<button type="button" class="btn !py-1 !px-2.5" style="padding:4px 9px;font-size:11px;line-height:1.4" title="点击应用该筛选" onclick="applyPreset(${i})"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-400"></i>${esc(p.name || "预设")}</button>`
+  ).join("");
+}
+
+/* 点击预设：填入筛选草稿并直接应用（默认全选命中番剧） */
+function applyPreset(i) {
+  const p = ratingPresets[i];
+  if (!p || !room) return;
+  const c = p.config || {};
+  draftYears = new Set(c.years || []);
+  draftMonths = new Set(c.months || []);
+  draftQuarters = new Set(c.quarters || []);
+  draftSources = new Set(c.sources || []);
+  draftTypes = new Set(c.types || []);
+  draftModes = (c.modes && c.modes.length) ? [...c.modes] : ["expect", "eps", "final"];
+  draftMaxScore = c.maxScore || 10;
+  $("cfgMaxScore").value = draftMaxScore;
+  document.querySelectorAll(".mode-cb").forEach(cb => cb.checked = draftModes.includes(cb.value));
+  draftFiltersChanged = true;
+  draftIdsTouched = false;                           // 应用配置时自动全选命中番剧
+  renderCfgTabs();
+  updateCfgDraftHint();
+  applyConfig();
+  toast(`已应用预设「${p.name}」`);
+}
+
+/* ============================================================
+ * 评分顺序排序（v4.0）：全选/全不选旁的「排序」按钮 → 拖拽悬浮窗
+ * 悬浮窗内为缩小版番剧卡片，HTML5 拖拽 + 触屏 ↑↓ 按钮，
+ * 保存后写入 room.selectedIds（评分顺序 = 勾选顺序）
+ * ============================================================ */
+let sortDraft = [];       // 排序草稿：anime id 数组
+let dragSrcIdx = null;    // 拖拽起始下标
+
+function openSortModal() {
+  if (!room) return;
+  if (!configApplied()) { toast("请先应用配置并选择番剧，再进行排序", true); return; }
+  const cur = draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []);
+  const matched = quarterAnimes().map(a => a.id);
+  sortDraft = matched.filter(id => cur.includes(id));
+  if (!sortDraft.length) { toast("当前没有勾选任何番剧", true); return; }
+  renderSortList();
+  $("sortModal").classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+
+function closeSortModal() {
+  $("sortModal").classList.remove("show");
+  document.body.style.overflow = "";
+  dragSrcIdx = null;
+}
+
+function renderSortList() {
+  const box = $("sortList");
+  if (!box) return;
+  if (!sortDraft.length) { box.innerHTML = `<div class="text-xs text-gray-500">当前没有勾选番剧</div>`; return; }
+  box.innerHTML = sortDraft.map((id, i) => {
+    const a = library.find(x => x.id === id);
+    if (!a) return "";
+    return `
+    <div class="sort-item" draggable="true" ondragstart="onSortDragStart(event, ${i})" ondragover="onSortDragOver(event)" ondrop="onSortDrop(event, ${i})" ondragend="onSortDragEnd(event)">
+      <span class="sort-idx">${i + 1}</span>
+      <span class="flex-none">${coverThumbHTML(a, 36)}</span>
+      <span class="text-sm flex-1 min-w-0 truncate">${esc(a.title)}</span>
+      <span class="text-[10px] text-gray-500 flex-none">${dateStr(a)}</span>
+      <button type="button" class="sort-btn" title="上移" onclick="moveSortItem(${i}, -1)"><i class="fa-solid fa-chevron-up"></i></button>
+      <button type="button" class="sort-btn" title="下移" onclick="moveSortItem(${i}, 1)"><i class="fa-solid fa-chevron-down"></i></button>
+      <i class="fa-solid fa-grip-lines text-gray-500 flex-none"></i>
+    </div>`;
+  }).join("");
+}
+
+function onSortDragStart(ev, i) {
+  dragSrcIdx = i;
+  ev.target.classList.add("dragging");
+  try { ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", String(i)); } catch (e) {}
+}
+function onSortDragOver(ev) { ev.preventDefault(); }
+function onSortDrop(ev, i) {
+  ev.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === i) return;
+  const [moved] = sortDraft.splice(dragSrcIdx, 1);
+  sortDraft.splice(i, 0, moved);
+  dragSrcIdx = null;
+  renderSortList();
+}
+function onSortDragEnd(ev) {
+  if (ev && ev.target) ev.target.classList.remove("dragging");
+  dragSrcIdx = null;
+}
+
+/* 触屏 / 精确微调：上下移动一位 */
+function moveSortItem(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= sortDraft.length) return;
+  [sortDraft[i], sortDraft[j]] = [sortDraft[j], sortDraft[i]];
+  renderSortList();
+}
+
+/* 快捷排序：按开播日期 / 按标题（排序后仍可拖拽微调） */
+function quickSort(kind) {
+  if (!sortDraft.length) return;
+  const info = id => library.find(x => x.id === id) || {};
+  sortDraft.sort((x, y) => {
+    const ax = info(x), ay = info(y);
+    if (kind === "title") return String(ax.title || "").localeCompare(String(ay.title || ""), "zh");
+    return ((ax.year || 0) * 10000 + (ax.month || 0) * 100 + (ax.day || 0))
+      - ((ay.year || 0) * 10000 + (ay.month || 0) * 100 + (ay.day || 0));
+  });
+  renderSortList();
+  toast(kind === "title" ? "已按标题排序" : "已按开播日期排序");
+}
+
+/* 保存顺序：写入房间 selectedIds（评分顺序 = 勾选顺序） */
+function saveSortOrder() {
+  if (!sortDraft.length) { closeSortModal(); return; }
+  room.selectedIds = [...sortDraft];
+  draftSelectedIds = [...sortDraft];
+  draftIdsTouched = true;
+  saveRoom();
+  renderAnimeSelect();
+  closeSortModal();
+  toast(`评分顺序已保存（共 ${sortDraft.length} 部）`);
 }
 
 /* 修改筛选条件（草稿）：只标记待应用，不再提前显示番剧 */
@@ -2416,6 +2600,7 @@ async function initEntry() {
   myNick = getMyNick();
   if (myNick) $("nickInput").value = myNick;
   updateCloudBadge();
+  loadRatingPresets();   // v4.0：评分预设（后台配置，进入房间后房主可见）
   showView("entry");
 
   // URL 参数携带房间号（邀请链接）

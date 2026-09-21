@@ -133,6 +133,15 @@
   .toast.ok { border-color: rgba(125,143,105,.5); color: var(--ok); }
 
   .ep-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--primary-soft); border: 1px solid var(--border); }
+  /* v4.0 同系列季度条带 */
+  .series-chip { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 62px; padding: 6px 4px 5px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); cursor: pointer; transition: all .15s; }
+  .series-chip:hover { border-color: rgba(165,180,252,.55); background: rgba(255,255,255,.09); transform: translateY(-1px); }
+  .series-chip-cover { width: 50px; height: 66px; border-radius: 6px; overflow: hidden; }
+  .series-chip-cover img, .series-chip-cover span { width: 100% !important; height: 100% !important; border-radius: 6px; }
+  .series-chip-txt { font-size: 10px; color: #a5b4fc; white-space: nowrap; }
+  /* v4.0 单集评分柱状图 */
+  .ep-chart { padding: 10px 12px 6px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); }
+  .ep-chart svg rect:hover { opacity: .8; }
   .ep-row.checked { border-color: rgba(125,143,105,.4); background: rgba(125,143,105,.08); }
   .ep-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #d9cbb4; cursor: pointer; display: flex; align-items: center; justify-content: center; color: transparent; transition: all .2s; flex: none; background: #fffdf8; }
   .ep-check.on { background: #a5b28a; border-color: transparent; color: #fff; }
@@ -710,6 +719,78 @@ const typeLabelOf = (a) => {
   return hit ? hit.label : k;
 };
 
+/* ============================================================
+ * 系列季度关联（v4.0）：series 同名即同系列，seasonNo 决定排序
+ * 数据来自后台「系列名 / 第几季」两个字段，留空表示独立番
+ * ============================================================ */
+const seriesOf = (a) => (a && a.series ? String(a.series).trim() : "");
+const seasonNoOf = (a) => Number(a && a.seasonNo) || 0;
+function seriesSiblings(a) {
+  const sn = seriesOf(a);
+  if (!sn) return [];
+  return library
+    .filter(x => x.id !== a.id && seriesOf(x) === sn)
+    .sort((x, y) => (seasonNoOf(x) || 99) - (seasonNoOf(y) || 99)
+      || (x.year || 0) - (y.year || 0)
+      || String(x.id).localeCompare(String(y.id)));
+}
+/* 同系列条带：封面缩略 + 季度徽章，点击直达该季度详情 */
+function seriesStripHTML(a) {
+  const sibs = seriesSiblings(a);
+  if (!sibs.length) return "";
+  const chip = (x) => `
+    <button type="button" class="series-chip" onclick="openDetail('${x.id}')" title="${escapeAttr(x.title)}">
+      <span class="series-chip-cover">${coverThumbHTML(x, 66)}</span>
+      <span class="series-chip-txt">第${seasonNoOf(x) || "?"}季</span>
+    </button>`;
+  return `
+    <div class="mt-4">
+      <div class="text-xs text-gray-400 mb-1.5 font-semibold"><i class="fa-solid fa-layer-group mr-1 text-indigo-400"></i>同系列 · ${escapeAttr(seriesOf(a))}</div>
+      <div class="flex flex-wrap gap-2">${sibs.map(chip).join("")}</div>
+    </div>`;
+}
+
+/* ============================================================
+ * 单集评分柱状图（v4.0）：SVG 自绘，IMDb 风格
+ * 未评分集显示为浅底短柱，均分画虚线参考线，柱体 hover 显示集号+分数+短评
+ * ============================================================ */
+function epChartHTML(a, epScores) {
+  const N = a.episodes || 0;
+  if (!N || N < 2) return "";
+  const vals = [];
+  for (let i = 1; i <= N; i++) vals.push((epScores && epScores[i] && epScores[i].score) || 0);
+  if (!vals.some(v => v > 0)) return "";
+  const maxV = 10;                                    // 单集评分为 10 星制
+  const W = Math.max(340, N * 24), H = 140;
+  const pad = { l: 28, r: 8, t: 8, b: 18 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const bw = iw / N;
+  const scoredArr = vals.filter(v => v > 0);
+  const avgV = scoredArr.reduce((s, v) => s + v, 0) / scoredArr.length;
+  let grids = "", bars = "", labels = "";
+  [0, 5, 10].forEach(g => {
+    const gy = pad.t + ih - g / maxV * ih;
+    grids += `<line x1="${pad.l}" y1="${gy}" x2="${W - pad.r}" y2="${gy}" stroke="rgba(255,255,255,.08)" stroke-width="1"/>`
+      + `<text x="${pad.l - 4}" y="${gy + 3}" font-size="9" fill="#8b95a8" text-anchor="end">${g}</text>`;
+  });
+  vals.forEach((v, i) => {
+    const ep = i + 1;
+    const x = pad.l + i * bw;
+    const h = Math.max(v / maxV * ih, v ? 3 : 2);
+    const y = pad.t + ih - h;
+    const t = v ? `EP${ep} · ${fmtScore(v)} 分${(epScores[ep] && epScores[ep].comment) ? " · " + epScores[ep].comment : ""}` : `EP${ep} · 未评分`;
+    bars += `<rect x="${x + 1.5}" y="${y}" width="${Math.max(bw - 3, 2)}" height="${h}" rx="2" fill="${v ? "#c8a25c" : "rgba(255,255,255,.07)"}"><title>${escapeAttr(t)}</title></rect>`;
+    if (N <= 30 || ep % 2 === 1) labels += `<text x="${x + bw / 2}" y="${H - 5}" font-size="9" fill="#8b95a8" text-anchor="middle">${ep}</text>`;
+  });
+  const ay = pad.t + ih - avgV / maxV * ih;
+  const avgLine = `<line x1="${pad.l}" y1="${ay}" x2="${W - pad.r}" y2="${ay}" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="4 3" opacity=".7"/>`
+    + `<text x="${W - pad.r}" y="${ay - 3}" font-size="9" fill="#a5b4fc" text-anchor="end">均 ${avgV.toFixed(1)}</text>`;
+  return `
+    <div class="ep-chart mb-3">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">${grids}${bars}${avgLine}${labels}</svg>
+    </div>`;
+}
+
 /* 柔和化渐变：与米色背景混合，避免鲜艳色块（缺字段时兜底默认色） */
 function softGradient(c1, c2) {
   if (!c1 || !String(c1).startsWith("#")) c1 = "#8b7355";
@@ -1271,7 +1352,9 @@ function renderDetail() {
           <div><i class="fa-solid fa-clapperboard mr-2 w-4 text-indigo-400"></i>全 ${a.episodes} 集</div>
           <div><i class="fa-solid fa-book mr-2 w-4 text-indigo-400"></i>来源 · ${sourceOf(a)}</div>
           <div><i class="fa-solid fa-film mr-2 w-4 text-indigo-400"></i>类型 · ${typeLabelOf(a)}</div>
+          ${seriesOf(a) ? `<div><i class="fa-solid fa-layer-group mr-2 w-4 text-indigo-400"></i>系列 · ${escapeAttr(seriesOf(a))}${seasonNoOf(a) ? "（第" + seasonNoOf(a) + "季）" : ""}</div>` : ""}
         </div>
+        ${seriesStripHTML(a)}
         <div class="space-y-2">
           <div class="text-xs text-gray-400 mb-1 font-semibold">追番状态</div>
           ${["watching","finished","abandoned"].map(s2 => `
@@ -1300,6 +1383,7 @@ function renderDetail() {
         <!-- 单集评分 -->
         <div class="glass p-4 mb-4">
           <div class="font-semibold mb-3"><i class="fa-solid fa-list mr-2 text-indigo-400"></i>单集评分</div>
+          ${epChartHTML(a, (epData.epScores || {}))}
           <div class="space-y-2">${eps}</div>
         </div>
 
