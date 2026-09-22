@@ -391,6 +391,30 @@
         <b>内容更新</b>：修改并保存公告内容后，此前勾选过「不再弹出」的用户会重新看到新公告（内容未变则保持静默），避免公告更新后无人可见。
       </div>
     </div>
+
+    <!-- 已发布公告：让管理员随时看到「当前线上到底给用户弹的是什么」 -->
+    <div class="card p-5 mt-5">
+      <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <div class="font-bold"><i class="fa-solid fa-bullhorn mr-1 text-amber-400"></i>已发布公告（线上版本）</div>
+          <div class="text-xs mt-1" style="color:var(--muted)">展示的是最近一次「保存配置」后真正生效的版本，与上方表单是否改过无关；可用于核验线上弹窗或回滚参考。</div>
+        </div>
+        <div class="flex gap-2 flex-none">
+          <button class="btn btn-ghost btn-sm" onclick="previewPublished()"><i class="fa-solid fa-eye"></i> 预览线上版本</button>
+          <button class="btn btn-ghost btn-sm" onclick="copyPublished()"><i class="fa-solid fa-copy"></i> 复制文案</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 mb-3 flex-wrap text-xs">
+        <span class="px-2 py-0.5 rounded-full border" id="ancPubState" style="border-color:rgba(0,0,0,.12);color:var(--muted)">未加载</span>
+        <span style="color:var(--muted)">字数 <span id="ancPubCount">0</span> / 2000</span>
+        <span style="color:var(--muted)">·</span>
+        <span style="color:var(--muted)" id="ancPubMeta">尚未从云端拉取，点击「刷新」或重新进入本页即可</span>
+      </div>
+      <pre id="ancPubContent" class="rounded-lg p-3 text-sm whitespace-pre-wrap break-words" style="min-height:80px;font-family:inherit;background:rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.08);color:var(--muted)">（尚无内容）</pre>
+      <div class="anc-hint mt-3" style="font-size:12px">
+        如需修改线上公告，请在上方表单编辑后点「保存配置」；本页的「已发布公告」会同步刷新。
+      </div>
+    </div>
   </div>
 
   <!-- ========== 评分预设（v4.0 新增 / 重构：chips 筛选 + 番剧勾选与评分顺序） ========== -->
@@ -999,6 +1023,8 @@ async function fbDel(id) {
  * 文档结构：{ enabled, content, updatedAt, updatedBy }
  * ============================================================ */
 const ANC_CONTENT_MAX = 2000;
+/* 云端最近一次保存的真实快照（与表单草稿解耦），用于「已发布公告」面板展示与预览 */
+let ancPublished = { enabled: false, content: "", updatedAt: 0, updatedBy: "" };
 
 async function loadConfig(quiet) {
   try {
@@ -1024,6 +1050,47 @@ function applyConfig(c) {
   }
   const home = document.getElementById("ancHomeState");
   if (home) home.textContent = c.enabled ? "（当前：已启用）" : "（当前：未启用）";
+  /* 同步「已发布公告」面板：刷新云端最新快照（与表单是否已编辑无关） */
+  ancPublished = {
+    enabled: !!c.enabled,
+    content: c.content || "",
+    updatedAt: c.updatedAt || 0,
+    updatedBy: c.updatedBy || "",
+  };
+  renderAncPublished();
+}
+
+function renderAncPublished() {
+  const box = document.getElementById("ancPubContent");
+  const count = document.getElementById("ancPubCount");
+  const state = document.getElementById("ancPubState");
+  const meta = document.getElementById("ancPubMeta");
+  if (!box) return;
+  const has = !!(ancPublished.content || ancPublished.updatedAt);
+  if (count) count.textContent = (ancPublished.content || "").length;
+  if (box) box.textContent = has ? ancPublished.content : "（尚无内容）";
+  if (box) box.style.color = has ? "" : "var(--muted)";
+  if (state) {
+    if (!has) {
+      state.textContent = "未发布";
+      state.style.background = "";
+    } else if (ancPublished.enabled) {
+      state.textContent = "已启用";
+      state.style.background = "rgba(76,175,80,.12)";
+      state.style.color = "#3f9142";
+      state.style.borderColor = "rgba(76,175,80,.4)";
+    } else {
+      state.textContent = "已停用";
+      state.style.background = "rgba(160,155,148,.12)";
+      state.style.color = "#7a7a7a";
+      state.style.borderColor = "rgba(160,155,148,.35)";
+    }
+  }
+  if (meta) {
+    meta.textContent = ancPublished.updatedAt
+      ? "最近保存：" + fbTime(ancPublished.updatedAt) + (ancPublished.updatedBy ? "（" + ancPublished.updatedBy + "）" : "")
+      : "尚未从云端拉取，点击「刷新」或重新进入本页即可";
+  }
 }
 
 function updateAncCount() {
@@ -1053,6 +1120,36 @@ async function saveConfig() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/* 预览「已发布公告」面板里的真实内容（与表单草稿解耦） */
+function previewPublished() {
+  if (!ancPublished.content) { toast("线上尚未发布过任何公告内容", true); return; }
+  if (window.DpccaAnnouncement && typeof window.DpccaAnnouncement.preview === "function") {
+    window.DpccaAnnouncement.preview(ancPublished.content);
+  } else {
+    toast("预览组件未加载，请刷新页面重试", true);
+  }
+}
+
+function copyPublished() {
+  if (!ancPublished.content) { toast("线上尚未发布过任何公告内容", true); return; }
+  const t = ancPublished.content;
+  const done = () => toast("已复制线上公告文案到剪贴板");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done).catch(() => fallbackCopy(t, done));
+  } else {
+    fallbackCopy(t, done);
+  }
+}
+function fallbackCopy(text, cb) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
+    cb && cb();
+  } catch (e) { toast("复制失败，请手动选中复制", true); }
 }
 
 /* 预览：复用前台 announcement.js，保证与线上弹窗完全一致 */
@@ -1380,8 +1477,11 @@ async function savePreset() {
   if (noFilter && !config.animeIds.length) {
     if (!confirm("筛选维度全部为「全部」且未勾选任何番剧，该预设会命中番剧库全部番剧并全选，确认保存？")) return;
   }
+  // 用 op 显式区分新增/编辑，避免 null/0 边界歧义（旧版 bug 根因）。
+  // presetEditing：null = 新增；数字 = 编辑列表中的第几项。
+  const op = presetEditing === null ? "create" : "update";
   try {
-    const res = await callAdmin("presetSave", { index: presetEditing, name, config });
+    const res = await callAdmin("presetSave", { op, index: presetEditing, name, config });
     if (!res.ok) throw new Error(res.message || "保存失败");
     toast(presetEditing === null ? "预设已新增" : "预设已更新");
     clearPresetForm();

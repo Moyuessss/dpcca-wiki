@@ -265,6 +265,17 @@
   .ep-chart { padding: 10px 12px 6px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); }
   .ep-chart svg rect:hover { opacity: .8; }
   .ep-row.checked { border-color: rgba(125,143,105,.4); background: rgba(125,143,105,.08); }
+  /* v4.0 单集评分：点击柱子跳转后高亮闪烁 */
+  @keyframes epRowFlash {
+    0%   { background: rgba(192,154,91,.45); }
+    100% { background: var(--primary-soft); }
+  }
+  .ep-row.ep-row-flash { animation: epRowFlash 1.2s ease-out; }
+  @keyframes epRowFlashChecked {
+    0%   { background: rgba(192,154,91,.55); }
+    100% { background: rgba(125,143,105,.08); }
+  }
+  .ep-row.ep-row-flash.checked { animation: epRowFlashChecked 1.2s ease-out; }
   .ep-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #d9cbb4; cursor: pointer; display: flex; align-items: center; justify-content: center; color: transparent; transition: all .2s; flex: none; background: #fffdf8; }
   .ep-check.on { background: #a5b28a; border-color: transparent; color: #fff; }
 
@@ -568,6 +579,14 @@
     <h2 class="text-2xl font-bold gradient-text mb-2">完结撒花！</h2>
     <p class="text-gray-400 mb-6">全部集数已看完，本番已自动标记为「已看完」</p>
     <button class="btn btn-primary mx-auto" onclick="closeConfetti()"><i class="fa-solid fa-check"></i> 好耶！</button>
+  </div>
+</div>
+
+<!-- v4.0.1 总评价分弹窗：全站单集评分聚合柱状图 -->
+<div id="epStatsModal" class="modal-overlay">
+  <div class="modal glass p-5 relative" style="width:min(560px,94vw)">
+    <button onclick="closeEpStats()" class="absolute right-3 top-3 w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
+    <div id="epStatsBody"></div>
   </div>
 </div>
 
@@ -913,8 +932,8 @@ function epChartHTML(a, epScores) {
   for (let i = 1; i <= N; i++) vals.push((epScores && epScores[i] && epScores[i].score) || 0);
   if (!vals.some(v => v > 0)) return "";
   const maxV = 10;                                    // 单集评分为 10 星制
-  const W = Math.max(340, N * 24), H = 140;
-  const pad = { l: 28, r: 8, t: 8, b: 18 };
+  const W = Math.max(340, N * 24), H = 96;            // v4.0.1 调矮（140 → 96），柱顶留白标分数
+  const pad = { l: 28, r: 8, t: 15, b: 18 };
   const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
   const bw = iw / N;
   const scoredArr = vals.filter(v => v > 0);
@@ -931,7 +950,9 @@ function epChartHTML(a, epScores) {
     const h = Math.max(v / maxV * ih, v ? 3 : 2);
     const y = pad.t + ih - h;
     const t = v ? `EP${ep} · ${fmtScore(v)} 分${(epScores[ep] && epScores[ep].comment) ? " · " + epScores[ep].comment : ""}` : `EP${ep} · 未评分`;
-    bars += `<rect x="${x + 1.5}" y="${y}" width="${Math.max(bw - 3, 2)}" height="${h}" rx="2" fill="${v ? "#c8a25c" : "rgba(255,255,255,.07)"}"><title>${escapeAttr(t)}</title></rect>`;
+    bars += `<rect x="${x + 1.5}" y="${y}" width="${Math.max(bw - 3, 2)}" height="${h}" rx="2" fill="${v ? "#c8a25c" : "rgba(255,255,255,.07)"}" style="cursor:pointer" onclick="epBarJump(${ep})"><title>${escapeAttr(t)}</title></rect>`;
+    // v4.0.1：柱顶标注分数（集数多时自动缩小字号）
+    if (v) bars += `<text x="${x + bw / 2}" y="${y - 3}" font-size="${N <= 20 ? 9 : (N <= 40 ? 8 : 7)}" fill="#c09a5b" text-anchor="middle">${v % 1 === 0 ? v : v.toFixed(1)}</text>`;
     if (N <= 30 || ep % 2 === 1) labels += `<text x="${x + bw / 2}" y="${H - 5}" font-size="9" fill="#8b95a8" text-anchor="middle">${ep}</text>`;
   });
   const ay = pad.t + ih - avgV / maxV * ih;
@@ -941,6 +962,122 @@ function epChartHTML(a, epScores) {
     <div class="ep-chart mb-3">
       <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">${grids}${bars}${avgLine}${labels}</svg>
     </div>`;
+}
+
+let epsTableOpen = false;                        // v4.0.1：评分表展开状态（重渲染后恢复，保存评分不再被收起）
+
+/* 单集评分表：默认收起 + 柱状图跳转（v4.0 微调）
+ * - 柱状图始终展示；点击柱 → 若评分表收起则展开，再滚动到对应 EP 行并闪烁高亮
+ * - 按钮文字 / 图标随状态切换 */
+function toggleEpsTable(forceShow) {
+  const wrap = document.getElementById("epTableWrap");
+  const btn = document.getElementById("epToggleBtn");
+  if (!wrap || !btn) return;
+  const hidden = wrap.classList.contains("hidden");
+  const show = (forceShow === true) ? true : (forceShow === false) ? false : hidden;
+  epsTableOpen = show;
+  if (show) {
+    wrap.classList.remove("hidden");
+    btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i> 收起评分表';
+  } else {
+    wrap.classList.add("hidden");
+    btn.innerHTML = '<i class="fa-solid fa-list"></i> 展开评分表';
+  }
+}
+function epBarJump(ep) {
+  const wrap = document.getElementById("epTableWrap");
+  if (wrap && wrap.classList.contains("hidden")) toggleEpsTable(true);
+  const row = document.querySelector(`#epTableWrap .ep-row[data-ep="${ep}"]`);
+  if (row) {
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.remove("ep-row-flash");          // 重启动画（连续点击不同柱子）
+    void row.offsetWidth;
+    row.classList.add("ep-row-flash");
+    setTimeout(() => row.classList.remove("ep-row-flash"), 1300);
+  } else if (wrap) {
+    wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+/* 同步「已填 N/Y 集 · 平均」统计 */
+function updateEpsStats() {
+  if (!currentAnime) return;
+  const ud = userData[currentAnime.id] || {};
+  const epScores = (ud.episodes && ud.episodes[currentAnime.id] && ud.episodes[currentAnime.id].epScores) || {};
+  const vals = Object.values(epScores).map(e => e && e.score).filter(Boolean);
+  const f = document.getElementById("epFilled");
+  const av = document.getElementById("epAvg");
+  if (f) f.textContent = vals.length;
+  if (av) av.textContent = vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1) : "-";
+}
+
+/* ============================================================
+ * v4.0.1 新增：查看更多评分 —— 全站单集评分总评价分柱状图
+ * 数据源：云函数 reviews_api action=epStats（匿名只读聚合全站
+ * user_anime 中该番剧各集评分，不涉及评论内容与用户身份）
+ * ============================================================ */
+async function openEpStats() {
+  if (!currentAnime) return;
+  $("epStatsModal").classList.add("show");
+  document.body.style.overflow = "hidden";
+  const body = $("epStatsBody");
+  body.innerHTML = '<div class="py-10 text-center text-sm text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>加载中…</div>';
+  try {
+    const app = dataProvider._cloud._app;
+    const r = await app.callFunction({ name: "reviews_api", data: { action: "epStats", data: { animeId: currentAnime.id } } });
+    const res = (r && r.result) || { ok: false };
+    if (!res.ok) throw new Error(res.message || "读取失败");
+    renderEpStatsBody(currentAnime, res.stats || {});
+  } catch (e) {
+    console.warn("[epStats] 调用失败", e);
+    body.innerHTML = `<div class="py-10 text-center text-sm text-red-400">读取失败：${escapeAttr(String(e.message || e))}</div>`;
+  }
+}
+function closeEpStats() {
+  $("epStatsModal").classList.remove("show");
+  // 详情弹窗可能仍处于打开状态：保持其滚动锁定
+  if (!$("detailModal").classList.contains("show")) document.body.style.overflow = "";
+}
+function renderEpStatsBody(a, stats) {
+  const N = a.episodes || 0;
+  const epAvg = stats.epAvg || {}, epCnt = stats.epCnt || {};
+  const users = stats.users || 0, avg = stats.avg || 0, eps = stats.eps || 0;
+  const body = $("epStatsBody");
+  if (!N || N < 2 || !Object.keys(epAvg).length) {
+    body.innerHTML = `<div class="py-10 text-center text-sm text-gray-400">暂无全站单集评分数据<br><span class="text-xs mt-1 inline-block">等待更多用户为《${escapeAttr(a.title)}》打分后生成</span></div>`;
+    return;
+  }
+  const maxV = 10, W = Math.max(340, N * 24), H = 110;
+  const pad = { l: 28, r: 8, t: 15, b: 18 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b, bw = iw / N;
+  const vals = [];
+  for (let i = 1; i <= N; i++) vals.push(+epAvg[i] || 0);
+  const scored = vals.filter(v => v > 0);
+  const avgV = scored.length ? scored.reduce((s, v) => s + v, 0) / scored.length : 0;
+  let grids = "", bars = "", labels = "";
+  [0, 5, 10].forEach(g => {
+    const gy = pad.t + ih - g / maxV * ih;
+    grids += `<line x1="${pad.l}" y1="${gy}" x2="${W - pad.r}" y2="${gy}" stroke="rgba(255,255,255,.08)" stroke-width="1"/>`
+      + `<text x="${pad.l - 4}" y="${gy + 3}" font-size="9" fill="#8b95a8" text-anchor="end">${g}</text>`;
+  });
+  vals.forEach((v, i) => {
+    const ep = i + 1, x = pad.l + i * bw;
+    const h = Math.max(v / maxV * ih, v ? 3 : 2), y = pad.t + ih - h;
+    const cnt = epCnt[ep] || 0;
+    const t = v ? `EP${ep} · 均分 ${(v % 1 === 0 ? v : v.toFixed(1))} · ${cnt} 人评` : `EP${ep} · 暂无评分`;
+    bars += `<rect x="${x + 1.5}" y="${y}" width="${Math.max(bw - 3, 2)}" height="${h}" rx="2" fill="${v ? "#c8a25c" : "rgba(255,255,255,.07)"}"><title>${escapeAttr(t)}</title></rect>`;
+    if (v) bars += `<text x="${x + bw / 2}" y="${y - 3}" font-size="${N <= 20 ? 9 : (N <= 40 ? 8 : 7)}" fill="#c09a5b" text-anchor="middle">${v % 1 === 0 ? v : v.toFixed(1)}</text>`;
+    if (N <= 30 || ep % 2 === 1) labels += `<text x="${x + bw / 2}" y="${H - 5}" font-size="9" fill="#8b95a8" text-anchor="middle">${ep}</text>`;
+  });
+  const ay = pad.t + ih - avgV / maxV * ih;
+  const avgLine = `<line x1="${pad.l}" y1="${ay}" x2="${W - pad.r}" y2="${ay}" stroke="#a5b4fc" stroke-width="1" stroke-dasharray="4 3" opacity=".7"/>`
+    + `<text x="${W - pad.r}" y="${ay - 3}" font-size="9" fill="#a5b4fc" text-anchor="end">均 ${avgV.toFixed(1)}</text>`;
+  body.innerHTML = `
+    <h2 class="text-xl font-bold mb-1"><i class="fa-solid fa-chart-simple mr-2 text-indigo-400"></i>总评价分</h2>
+    <div class="text-xs text-gray-500 mb-3">《${escapeAttr(a.title)}》全 ${N} 集 · ${users} 人参与 · 总平均 <b style="color:#c09a5b">${avg.toFixed(1)}</b> 分（共 ${eps} 人·集）</div>
+    <div class="ep-chart">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">${grids}${bars}${avgLine}${labels}</svg>
+    </div>
+    <p class="text-[11px] text-gray-500 mt-2"><i class="fa-solid fa-circle-info mr-1"></i>柱体为全站用户每集评分的平均分；悬停柱子可查看该集参评人数。</p>`;
 }
 
 /* 柔和化渐变：与米色背景混合，避免鲜艳色块（缺字段时兜底默认色） */
@@ -1123,12 +1260,15 @@ function openDetail(id) {
   detailEditing = "";
   currentEp = 1; epScoreDraft = 0; epCommentDraft = "";
   renderDetail();
+  updateEpsStats();                          // 单集评分统计（已填 / 平均）
+  toggleEpsTable(false);                     // 单集评分列表默认收起（仅展示柱状图）
   $("detailModal").classList.add("show");
   document.body.style.overflow = "hidden";
 }
 
 function closeDetail() {
   $("detailModal").classList.remove("show");
+  closeEpStats();                                     // v4.0.1：详情关闭时联动关闭总评价分弹窗
   document.body.style.overflow = "";
 }
 
@@ -1175,7 +1315,7 @@ function renderDetail() {
     const seen = watched.includes(i);
     const epScore = epData.epScores && epData.epScores[i];
     eps += `
-      <div class="ep-row ${seen ? "checked" : ""}">
+      <div class="ep-row ${seen ? "checked" : ""}" data-ep="${i}">
         <div class="ep-check ${seen ? "on" : ""}" onclick="toggleEp(${i})">${seen ? '<i class="fa-solid fa-check" style="font-size:12px"></i>' : ""}</div>
         <span class="text-sm flex-none w-8">EP${i}</span>
         <span class="text-[10px] text-gray-500 flex-none">${epAirDate(a, i)}</span>
@@ -1234,9 +1374,16 @@ function renderDetail() {
 
         <!-- 单集评分 -->
         <div class="glass p-4 mb-4">
-          <div class="font-semibold mb-3"><i class="fa-solid fa-list mr-2 text-indigo-400"></i>单集评分</div>
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div class="font-semibold"><i class="fa-solid fa-list mr-2 text-indigo-400"></i>单集评分</div>
+            <button type="button" class="btn !py-0.5 !px-2 text-[11px]" onclick="openEpStats()"><i class="fa-solid fa-chart-simple"></i> 查看更多评分</button>
+          </div>
           ${epChartHTML(a, (epData.epScores || {}))}
-          <div class="space-y-2">${eps}</div>
+          <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div class="text-[11px] text-gray-500">已填 <span id="epFilled">0</span>/${a.episodes} 集 · 平均 <span id="epAvg">-</span></div>
+            <button type="button" class="btn !py-0.5 !px-2 text-[11px]" id="epToggleBtn" onclick="toggleEpsTable()"><i class="fa-solid fa-list"></i> 展开评分表</button>
+          </div>
+          <div id="epTableWrap" class="space-y-2 hidden">${eps}</div>
         </div>
 
         <!-- 弃番评论：仅在状态 = 已弃番时显示，置于完结评分之前 -->
@@ -1264,6 +1411,7 @@ function renderDetail() {
       </div>
     </div>`;
   if (window.DpccaReviewWall) window.DpccaReviewWall.refreshAll(a.id);
+  if (epsTableOpen) toggleEpsTable(true);     // v4.0.1：重渲染后恢复评分表展开状态（保存评分/切换状态不再被收起）
 }
 
 function escapeAttr(s) { return (s || "").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
@@ -1563,6 +1711,7 @@ async function removeEpScore(ep) {
   if (epObj.epScores) delete epObj.epScores[ep];
   await persist();
   renderDetail(); renderProfile();
+  if (epsTableOpen) epBarJump(ep);          // v4.0.1：删除评分后同样保持展开并定位到该集
   if (window.DpccaReviewWall) {
     window.DpccaReviewWall.pushRating(id, currentAnime.title, "ep", String(ep), 0, "");
     window.DpccaReviewWall.refreshAll(id);
@@ -1581,6 +1730,7 @@ async function saveEpScore() {
   await persist();
   removeEpEditor();
   renderDetail(); renderProfile();
+  if (epsTableOpen) epBarJump(currentEp);      // v4.0.1：保存后保持展开并定位闪烁到刚评的集，便于继续评下一集
   if (window.DpccaReviewWall) window.DpccaReviewWall.pushRating(id, currentAnime.title, "ep", String(currentEp), epScoreDraft, $("epComment").value.trim());
   toast("单集评分已保存");
 }

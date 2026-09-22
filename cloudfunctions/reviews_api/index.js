@@ -12,6 +12,8 @@
  *   action=clearAnime  删除本人对某番剧的全部评论行（追番清单删除整剧时调用）
  *   action=rebuild     按本人 user_anime 全量镜像：补齐缺失行、更新内容不一致行、
  *                      清理已不在档案中的孤儿行（保留管理端 hidden 状态）
+ *   action=epStats     （v4.0.1）全站单集评分统计（匿名可访问，纯只读聚合）：
+ *                      入参 { animeId }，返回每集平均分/参评人数/总平均分
  *
  * 行文档（anime_reviews）：
  *   _id = "r_{animeId}_{type}_{ep|0}_{uid}"（幂等、可推导）
@@ -256,11 +258,66 @@ async function rebuild(uid) {
   return { ok: true, created, updated, existed, pruned };
 }
 
+/* ============================================================
+ * v4.0.1 新增：epStats —— 单集评分全站统计（只读聚合，匿名可访问）
+ * 汇总 user_anime 中所有用户对某番剧各集的 epScores：
+ *   每集平均分 / 每集参评人数 / 总参评人数 / 总平均分
+ * 纯公开统计（不含评论内容/身份），置于 D 账号拦截之前。
+ * ============================================================ */
+async function epStats(p) {
+  const animeId = String((p && p.animeId) || "").trim();
+  if (!animeId) return { ok: false, message: "缺少 animeId" };
+
+  const epSum = {}, epCnt = {};
+  let users = 0, totalSum = 0, totalCnt = 0, scanned = 0;
+  let skip = 0;
+  while (true) {
+    const res = await db.collection(USER_ANIME).skip(skip).limit(100).get().catch(() => null);
+    const rows = (res && res.data) || [];
+    for (const u of rows) {
+      const eps = u && u.data && u.data[animeId] && u.data[animeId].episodes
+        && u.data[animeId].episodes[animeId] && u.data[animeId].episodes[animeId].epScores;
+      if (!eps) continue;
+      let userHas = false;
+      Object.keys(eps).forEach(ep => {
+        const sc = eps[ep] && Number(eps[ep].score);
+        if (!sc || sc <= 0) return;
+        epSum[ep] = (epSum[ep] || 0) + sc;
+        epCnt[ep] = (epCnt[ep] || 0) + 1;
+        totalSum += sc;
+        totalCnt++;
+        userHas = true;
+      });
+      if (userHas) users++;
+    }
+    scanned += rows.length;
+    if (rows.length < 100 || scanned >= 20000) break;   // 防御性上限
+    skip += 100;
+  }
+
+  const epAvg = {};
+  Object.keys(epSum).forEach(ep => { epAvg[ep] = +(epSum[ep] / epCnt[ep]).toFixed(1); });
+  return {
+    ok: true,
+    stats: {
+      animeId,
+      users,                                   // 至少为一集打分的用户数
+      epAvg,                                   // { 集号: 平均分（1 位小数） }
+      epCnt,                                   // { 集号: 参评人数 }
+      avg: totalCnt ? +(totalSum / totalCnt).toFixed(1) : 0,   // 总平均分
+      eps: totalCnt,                            // 已评（人·集）总数
+    },
+  };
+}
+
 exports.main = async (event) => {
   const { action, data } = event || {};
   const uid = callerUid(event);
 
   try {
+    // v4.0.1：全站单集评分统计只读接口，匿名可访问（早于 D 账号拦截）
+    if (action === "epStats") return await epStats(data || {});
+
     // 游客 / 未登录：一律拒绝（评论墙仅收录注册 D 账号）
     if (!/^D\d+$/.test(uid)) {
       return { ok: false, code: "NEED_ACCOUNT", message: "请先注册并登录 D 账号后再参与评论墙" };

@@ -649,7 +649,9 @@ const PRESET_DOC = "rating_presets";   // 评分室预设（v4.0）：单文档 
 
 async function configGet() {
   const res = await db.collection(SITE_CONFIG).doc(CONFIG_DOC).get().catch(() => null);
-  const doc = res ? rvPick(res.data) : null;
+  // v4.0.2 修复：rvPick 期望整个响应对象（内部取 res.data），此前误传 res.data
+  // 导致「已发布公告」面板永远显示空（configSave 写入正常但读取恒为默认值）
+  const doc = res ? rvPick(res) : null;
   return {
     ok: true,
     config: {
@@ -696,8 +698,10 @@ async function configSave(p, admin) {
  * 前台 rating.html 直读该文档（集合 read=true），写入仅经本函数。
  * ===================================================================== */
 async function readPresets() {
+  // v4.0.2 修复：rvPick 期望整个响应对象（内部取 res.data），此前误传 res.data
+  // 导致永远读到 null → presetSave 每次 push 到空数组 → set 覆盖第一条（「只能保存一个」根因）
   const res = await db.collection(SITE_CONFIG).doc(PRESET_DOC).get().catch(() => null);
-  const doc = res ? rvPick(res.data) : null;
+  const doc = res ? rvPick(res) : null;
   return (doc && Array.isArray(doc.list)) ? doc.list : [];
 }
 
@@ -732,15 +736,49 @@ async function presetSave(p, admin) {
   const cfg = sanitizePresetConfig(p.config);
   const list = await readPresets();
   if (list.length >= 50) return { ok: false, message: "预设最多 50 个，请先删除部分预设" };
-  const idx = Number(p.index);
+  // 区分「新增」与「编辑」：优先按 op 硬分支（前端 v4.0 起固定传 create/update），
+  // 兼容历史 index 字段。新增：必须保证 null/undefined/"" 三态都走 push，
+  // 绝不允许落到 list[0] = item（这正是旧版「只能保存一个预设」的根因）。
+  let isCreate = true;
+  let idx = -1;
+  const op = String((p && p.op) || "").trim().toLowerCase();
+  if (op === "create") { isCreate = true; idx = -1; }
+  else if (op === "update") {
+    const rawIdx = p && p.index;
+    if (rawIdx === undefined || rawIdx === null || rawIdx === "") {
+      return { ok: false, message: "编辑预设时缺少 index 字段" };
+    }
+    idx = Number(rawIdx);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) {
+      return { ok: false, message: "预设不存在（index 越界或无效）" };
+    }
+    isCreate = false;
+  } else {
+    // 兼容旧版：仅按 index 字段判断。index 为 undefined/null/""/非数字 → 新增；
+    // 否则必须通过越界校验。绝不用 Number(p.index) 把 null 转成 0 误判。
+    const rawIdx = p && p.index;
+    if (rawIdx === undefined || rawIdx === null || rawIdx === "" ||
+        (typeof rawIdx === "number" && isNaN(rawIdx))) {
+      isCreate = true;
+    } else {
+      idx = Number(rawIdx);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) {
+        // 越界视为新增（防御性兜底，避免误覆盖 list[0]）
+        isCreate = true;
+        idx = -1;
+      } else {
+        isCreate = false;
+      }
+    }
+  }
   const item = {
     name,
     config: cfg,
     updatedAt: Date.now(),
     updatedBy: (admin && admin.accountName) || "",
   };
-  if (Number.isInteger(idx) && idx >= 0 && idx < list.length) list[idx] = item;
-  else list.push(item);
+  if (isCreate) list.push(item);
+  else list[idx] = item;
   try {
     await db.collection(SITE_CONFIG).doc(PRESET_DOC).set({ list });
   } catch (e) {

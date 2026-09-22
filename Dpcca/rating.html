@@ -165,6 +165,9 @@
 
     /* 星星评分触控加大 */
     .star { font-size: 26px; }
+
+    /* 星星评分触控加大 */
+    .star { font-size: 26px; }
     .star-hint { font-size: 13px; margin-left: 6px; }
 
     /* 统计卡片紧凑 */
@@ -183,6 +186,38 @@
     /* 触屏设备 hover 效果去掉 */
     .rank-row:hover { transform: none; }
   }
+
+  /* ============================================================
+     v4.0 房主「番剧选择」面板：候选 + 已选拖拽（重构自旧排序弹窗样式）
+     ============================================================ */
+  .ow-cand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.02);
+    cursor: pointer; user-select: none;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .ow-cand:hover { background: rgba(255,255,255,.08); }
+  .ow-cand.on { background: rgba(76,175,80,.1); border-color: rgba(76,175,80,.4); }
+  .ow-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.03);
+    cursor: grab; user-select: none;
+  }
+  .ow-item.dragging { opacity: .4; border-style: dashed; }
+  .ow-idx {
+    width: 22px; text-align: center;
+    font-size: 11px; color: #a5b4fc; flex: none;
+  }
+  .ow-btn {
+    background: none; border: none; cursor: pointer;
+    color: #94a3b8; font-size: 13px;
+    padding: 2px 4px; border-radius: 6px;
+  }
+  .ow-btn:hover { background: rgba(255,255,255,.1); color: #e2e8f0; }
 
   /* 超小屏（<380px）进一步精简导航文字 */
   @media (max-width: 380px) {
@@ -350,15 +385,33 @@
               <div class="lg:col-span-2 text-[11px] text-gray-500" id="cfgDraftHint">尚未应用配置</div>
             </div>
           </div>
-          <!-- 番剧选择（仅房主） -->
+          <!-- 番剧选择（仅房主 · v4.0 重构：chips 候选 + 拖拽顺序已选） -->
           <div id="ownerSelect" class="glass p-4 mb-4">
-            <div class="font-semibold text-sm mb-3"><i class="fa-solid fa-square-check mr-2 text-indigo-400"></i>选择要打分的番剧（仅房主）</div>
-            <div class="text-[11px] text-gray-500 mb-2">先在上方勾选筛选条件（可多选）与评分模式，点击「应用配置」后这里才会显示候选番剧；勾选番剧后再次点击「应用配置」保存</div>
-            <div id="animeSelectList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1"></div>
-            <div class="flex flex-wrap gap-2 mt-3">
-              <button class="btn" onclick="selectAllAnime()"><i class="fa-solid fa-check-double"></i> 全选</button>
-              <button class="btn" onclick="deselectAllAnime()"><i class="fa-solid fa-square-minus"></i> 全不选</button>
-              <button class="btn" onclick="openSortModal()"><i class="fa-solid fa-arrow-down-short-wide"></i> 排序</button>
+            <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+              <div class="font-semibold text-sm"><i class="fa-solid fa-square-check mr-2 text-indigo-400"></i>选择要打分的番剧（仅房主）</div>
+              <div class="text-[11px] text-gray-500">先在上方勾选筛选条件，点击「应用配置」后这里显示候选番剧</div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <input id="owSearch" type="text" placeholder="搜索番剧标题 / ID…" class="input !py-1.5 !text-sm" style="max-width:240px" oninput="renderOwnerPanels()">
+              <button class="btn !py-1.5 !px-2.5 text-xs" onclick="owSelectAll()"><i class="fa-solid fa-check-double"></i> 全选候选</button>
+              <button class="btn !py-1.5 !px-2.5 text-xs" onclick="owClearSel()"><i class="fa-solid fa-square-minus"></i> 清空已选</button>
+              <span class="text-[11px] text-gray-500 ml-auto"><span id="owCandCount">0</span> 部候选 · 已选 <span id="owSelCount">0</span> 部</span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <div class="text-xs text-gray-500 mb-1.5"><i class="fa-solid fa-list-ul mr-1"></i>候选番剧（点击勾选）</div>
+                <div id="owCandList" class="space-y-1.5 max-h-72 overflow-y-auto pr-1"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1.5 flex items-center justify-between">
+                  <span><i class="fa-solid fa-square-check mr-1"></i>已选番剧（评分顺序，拖拽 / ↑↓ 调序）</span>
+                  <span class="flex gap-1">
+                    <button class="btn !py-0.5 !px-1.5 text-[10px]" onclick="owQuickSort('date')" title="按开播日期排序"><i class="fa-solid fa-calendar"></i></button>
+                    <button class="btn !py-0.5 !px-1.5 text-[10px]" onclick="owQuickSort('title')" title="按标题排序"><i class="fa-solid fa-font"></i></button>
+                  </span>
+                </div>
+                <div id="owSelList" class="space-y-1.5 max-h-72 overflow-y-auto pr-1"></div>
+              </div>
             </div>
           </div>
           <div class="text-xs text-gray-500 mb-2"><i class="fa-solid fa-circle-info mr-1"></i>房间信息</div>
@@ -444,23 +497,7 @@
   </div>
 </div>
 
-<!-- 评分顺序排序弹窗（v4.0） -->
-<div id="sortModal" class="modal-overlay">
-  <div class="modal glass p-6 relative">
-    <button onclick="closeSortModal()" class="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition"><i class="fa-solid fa-xmark"></i></button>
-    <div class="font-semibold text-sm mb-1"><i class="fa-solid fa-arrow-down-short-wide mr-2 text-indigo-400"></i>评分顺序排序</div>
-    <div class="text-[11px] text-gray-500 mb-3">拖动卡片调整评分顺序（先上后下）；触屏设备可用卡片右侧 ↑↓ 按钮移动。顺序保存后立即生效。</div>
-    <div class="flex flex-wrap gap-2 mb-3">
-      <button class="btn !py-1.5 !px-3 text-xs" onclick="quickSort('date')"><i class="fa-solid fa-calendar"></i> 按开播日期</button>
-      <button class="btn !py-1.5 !px-3 text-xs" onclick="quickSort('title')"><i class="fa-solid fa-font"></i> 按标题</button>
-    </div>
-    <div id="sortList" class="space-y-2 max-h-[55vh] overflow-y-auto pr-1 mb-4"></div>
-    <div class="flex justify-end gap-2">
-      <button class="btn btn-ghost" onclick="closeSortModal()">取消</button>
-      <button class="btn btn-primary" onclick="saveSortOrder()"><i class="fa-solid fa-check"></i> 保存顺序</button>
-    </div>
-  </div>
-</div>
+<!-- 评分顺序排序弹窗（v4.0 弃用：已并入房主面板的「已选番剧」拖拽区） -->
 
 <div id="toastContainer" class="toast-container"></div>
 
@@ -1160,35 +1197,175 @@ async function applyConfig() {
   toast("房间配置已应用，共 " + ids.length + " 部番剧");
 }
 
-/* ---------- 房主选择要打分的番剧（v3.0：应用配置后才显示） ---------- */
-function renderAnimeSelect() {
-  if (!room || !$("animeSelectList")) return;
-  const box = $("animeSelectList");
-  if (!configApplied()) {
-    box.innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10 lg:col-span-2 sm:col-span-2">尚未应用配置：请先勾选筛选条件与评分模式，点击「应用配置」后这里才会显示候选番剧。</div>`;
-    return;
-  }
-  const base = library.filter(roomMatch);
-  if (!base.length) {
-    box.innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10 sm:col-span-2">没有符合当前配置的番剧，请调整筛选条件后重新「应用配置」。</div>`;
-    return;
-  }
-  const sel = new Set(draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []));
-  box.innerHTML = base.map(a => `
-    <label class="flex items-center gap-2 p-2 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer">
-      <input type="checkbox" class="anime-select-cb" value="${a.id}" ${sel.has(a.id) ? "checked" : ""} onchange="onAnimeCbChange()">
-      <span class="flex items-center gap-2 min-w-0"><span class="flex-none">${coverThumbHTML(a, 30)}</span><span class="text-sm truncate">${a.title}</span><span class="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 flex-none text-gray-400">${a.year || ""}${a.month || ""}月 · ${a.source || "待定"} · ${typeLabelOf(a)}</span></span>
-    </label>`).join("");
+/* ---------- 房主选择要打分的番剧（v4.0：候选列表 + 已选拖拽面板） ---------- */
+/* draftSelectedIds 为有序 id 数组：选稿即评分顺序；点击候选行加入尾部，已选行拖拽改序，X 移除 */
+let owDragIdx = null;
+let owCandRows = [];
+
+function owCover(a) {
+  return `<span class="flex-none">${coverThumbHTML(a, 28)}</span>`;
 }
 
-function selectAllAnime() {
-  document.querySelectorAll(".anime-select-cb").forEach(cb => cb.checked = true);
-  onAnimeCbChange();
+function owCandidateList() {
+  if (!library || !configApplied()) return [];
+  const q = (($("owSearch") || {}).value || "").trim().toLowerCase();
+  return library.filter(roomMatch).filter(a => !q || (a.title || "").toLowerCase().includes(q) || (a.id || "").toLowerCase().includes(q));
 }
-function deselectAllAnime() {
-  document.querySelectorAll(".anime-select-cb").forEach(cb => cb.checked = false);
-  onAnimeCbChange();
+
+function renderOwnerPanels() {
+  if (!room) return;
+  if (!configApplied()) {
+    $("owCandList").innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10">尚未应用配置：请先在上方勾选筛选条件与评分模式，点击「应用配置」后这里才会显示候选番剧。</div>`;
+    $("owSelList").innerHTML = "";
+    $("owCandCount").textContent = "0"; $("owSelCount").textContent = "0";
+    return;
+  }
+  owCandRows = owCandidateList();
+  const selIds = draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []);
+  const selSet = new Set(selIds);
+  $("owCandCount").textContent = owCandRows.length;
+  $("owSelCount").textContent = selIds.length;
+  $("owCandList").innerHTML = owCandRows.length
+    ? owCandRows.map((a, i) => {
+        const on = selSet.has(a.id);
+        return `<div class="ow-cand ${on ? "on" : ""}" onclick="owToggle(${i})" title="点击勾选 / 取消">
+          <i class="fa-${on ? "solid fa-square-check text-emerald-400" : "regular fa-square text-gray-500"} flex-none"></i>
+          ${owCover(a)}
+          <span class="min-w-0 flex-1">
+            <span class="block text-[13px] truncate">${esc(a.title || "(未命名)")}</span>
+            <span class="block text-[11px] truncate text-gray-500">${a.year || "----"}·${a.month || "?"}月 · ${esc(a.source || "未知")} · ${typeLabelOf(a)}</span>
+          </span>
+        </div>`;
+      }).join("")
+    : `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10">没有符合当前配置的番剧，请调整筛选条件后重新「应用配置」。</div>`;
+  renderOwnerSelected();
 }
+
+function renderOwnerSelected() {
+  const ids = draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []);
+  const box = $("owSelList");
+  if (!box) return;
+  $("owSelCount").textContent = ids.length;
+  if (!ids.length) {
+    box.innerHTML = `<div class="text-xs text-gray-500 p-3 rounded-lg border border-white/10">尚未勾选番剧；点左侧候选行加入；勾选顺序即评分顺序。</div>`;
+    return;
+  }
+  box.innerHTML = ids.map((id, i) => {
+    const a = library.find(x => x.id === id);
+    if (!a) return "";
+    return `<div class="ow-item" draggable="true" ondragstart="owDragStart(event,${i})" ondragover="owDragOver(event)" ondrop="owDrop(event,${i})" ondragend="owDragEnd(event)">
+      <i class="fa-solid fa-grip-lines flex-none text-gray-500" title="拖拽调序"></i>
+      <span class="ow-idx">${i + 1}</span>
+      ${owCover(a)}
+      <span class="min-w-0 flex-1 text-[13px] truncate">${esc(a.title || "(未命名)")}</span>
+      <button class="ow-btn" onclick="owMove(${i},-1)" title="上移"><i class="fa-solid fa-chevron-up"></i></button>
+      <button class="ow-btn" onclick="owMove(${i},1)" title="下移"><i class="fa-solid fa-chevron-down"></i></button>
+      <button class="ow-btn" onclick="owRemove(${i})" title="移除"><i class="fa-solid fa-xmark"></i></button>
+    </div>`;
+  }).join("");
+}
+
+/* 点击候选行：勾选/取消（切换时即时把勾选状态同步进 draftSelectedIds） */
+function owToggle(i) {
+  const a = owCandRows[i];
+  if (!a) return;
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  const pos = ids.indexOf(a.id);
+  if (pos >= 0) ids.splice(pos, 1);
+  else ids.push(a.id);
+  draftSelectedIds = ids;
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+
+function owMove(i, d) {
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  const j = i + d;
+  if (j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  draftSelectedIds = ids;
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+
+function owRemove(i) {
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  ids.splice(i, 1);
+  draftSelectedIds = ids;
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+
+function owDragStart(e, i) {
+  owDragIdx = i;
+  e.target.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  try { e.dataTransfer.setData("text/plain", String(i)); } catch (_) {}
+}
+function owDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
+function owDrop(e, i) {
+  e.preventDefault();
+  if (owDragIdx == null || owDragIdx === i) return;
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  const [moved] = ids.splice(owDragIdx, 1);
+  ids.splice(i, 0, moved);
+  draftSelectedIds = ids;
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+function owDragEnd(e) { owDragIdx = null; if (e && e.target) e.target.classList.remove("dragging"); }
+
+function owSelectAll() {
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  owCandRows.forEach(a => { if (!ids.includes(a.id)) ids.push(a.id); });
+  draftSelectedIds = ids;
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+
+function owClearSel() {
+  if (!(draftSelectedIds || []).length && !(room.selectedIds || []).length) return;
+  draftSelectedIds = [];
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+}
+
+function owQuickSort(kind) {
+  const ids = draftIdsTouched ? [...(draftSelectedIds || [])] : [...(room.selectedIds || [])];
+  if (!ids.length) { toast("已选列表为空", true); return; }
+  const arr = ids.map(id => library.find(x => x.id === id)).filter(Boolean);
+  arr.sort((a, b) => {
+    if (kind === "title") return String(a.title || "").localeCompare(String(b.title || ""), "zh");
+    return ((Number(a.year) || 0) * 10000 + (Number(a.month) || 1) * 100 + (Number(a.day) || 1))
+      - ((Number(b.year) || 0) * 10000 + (Number(b.month) || 1) * 100 + (Number(b.day) || 1));
+  });
+  draftSelectedIds = arr.map(a => a.id);
+  draftIdsTouched = true;
+  draftDirty = true;
+  updateCfgDraftHint();
+  renderOwnerPanels();
+  toast(kind === "title" ? "已按标题排序" : "已按开播日期排序");
+}
+
+/* 兼容旧名字的壳：renderAnimeSelect / selectAllAnime / deselectAllAnime / openSortModal / closeSortModal
+ * 历史引用点（applyConfig / applyPreset / saveSortOrder 调用方）已全部迁移到新函数，下方保留同名 alias 以防遗漏 */
+function renderAnimeSelect() { renderOwnerPanels(); }
+function selectAllAnime() { owSelectAll(); }
+function deselectAllAnime() { owClearSel(); }
+function openSortModal() { /* 排序已并入「已选番剧」面板，无需独立弹窗 */ toast("已选番剧列表可直接拖拽调序，无需打开弹窗"); }
+function closeSortModal() { /* no-op：旧弹窗已弃用 */ }
 
 /* ============================================================
  * 评分预设（v4.0）：后台 admin.html「评分预设」自定义，
@@ -1259,103 +1436,9 @@ async function applyPreset(i) {
 }
 
 /* ============================================================
- * 评分顺序排序（v4.0）：全选/全不选旁的「排序」按钮 → 拖拽悬浮窗
- * 悬浮窗内为缩小版番剧卡片，HTML5 拖拽 + 触屏 ↑↓ 按钮，
- * 保存后写入 room.selectedIds（评分顺序 = 勾选顺序）
+ * 评分顺序排序（v4.0 重构）：合并到房主面板的「已选番剧」列表，
+ * 通过拖拽 + ↑↓ 按钮实时调整；旧版悬浮窗已弃用。
  * ============================================================ */
-let sortDraft = [];       // 排序草稿：anime id 数组
-let dragSrcIdx = null;    // 拖拽起始下标
-
-function openSortModal() {
-  if (!room) return;
-  if (!configApplied()) { toast("请先应用配置并选择番剧，再进行排序", true); return; }
-  const cur = draftIdsTouched ? (draftSelectedIds || []) : (room.selectedIds || []);
-  const matched = quarterAnimes().map(a => a.id);
-  sortDraft = matched.filter(id => cur.includes(id));
-  if (!sortDraft.length) { toast("当前没有勾选任何番剧", true); return; }
-  renderSortList();
-  $("sortModal").classList.add("show");
-  document.body.style.overflow = "hidden";
-}
-
-function closeSortModal() {
-  $("sortModal").classList.remove("show");
-  document.body.style.overflow = "";
-  dragSrcIdx = null;
-}
-
-function renderSortList() {
-  const box = $("sortList");
-  if (!box) return;
-  if (!sortDraft.length) { box.innerHTML = `<div class="text-xs text-gray-500">当前没有勾选番剧</div>`; return; }
-  box.innerHTML = sortDraft.map((id, i) => {
-    const a = library.find(x => x.id === id);
-    if (!a) return "";
-    return `
-    <div class="sort-item" draggable="true" ondragstart="onSortDragStart(event, ${i})" ondragover="onSortDragOver(event)" ondrop="onSortDrop(event, ${i})" ondragend="onSortDragEnd(event)">
-      <span class="sort-idx">${i + 1}</span>
-      <span class="flex-none">${coverThumbHTML(a, 36)}</span>
-      <span class="text-sm flex-1 min-w-0 truncate">${esc(a.title)}</span>
-      <span class="text-[10px] text-gray-500 flex-none">${dateStr(a)}</span>
-      <button type="button" class="sort-btn" title="上移" onclick="moveSortItem(${i}, -1)"><i class="fa-solid fa-chevron-up"></i></button>
-      <button type="button" class="sort-btn" title="下移" onclick="moveSortItem(${i}, 1)"><i class="fa-solid fa-chevron-down"></i></button>
-      <i class="fa-solid fa-grip-lines text-gray-500 flex-none"></i>
-    </div>`;
-  }).join("");
-}
-
-function onSortDragStart(ev, i) {
-  dragSrcIdx = i;
-  ev.target.classList.add("dragging");
-  try { ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", String(i)); } catch (e) {}
-}
-function onSortDragOver(ev) { ev.preventDefault(); }
-function onSortDrop(ev, i) {
-  ev.preventDefault();
-  if (dragSrcIdx === null || dragSrcIdx === i) return;
-  const [moved] = sortDraft.splice(dragSrcIdx, 1);
-  sortDraft.splice(i, 0, moved);
-  dragSrcIdx = null;
-  renderSortList();
-}
-function onSortDragEnd(ev) {
-  if (ev && ev.target) ev.target.classList.remove("dragging");
-  dragSrcIdx = null;
-}
-
-/* 触屏 / 精确微调：上下移动一位 */
-function moveSortItem(i, dir) {
-  const j = i + dir;
-  if (j < 0 || j >= sortDraft.length) return;
-  [sortDraft[i], sortDraft[j]] = [sortDraft[j], sortDraft[i]];
-  renderSortList();
-}
-
-/* 快捷排序：按开播日期 / 按标题（排序后仍可拖拽微调） */
-function quickSort(kind) {
-  if (!sortDraft.length) return;
-  const info = id => library.find(x => x.id === id) || {};
-  sortDraft.sort((x, y) => {
-    const ax = info(x), ay = info(y);
-    if (kind === "title") return String(ax.title || "").localeCompare(String(ay.title || ""), "zh");
-    return ((ax.year || 0) * 10000 + (ax.month || 0) * 100 + (ax.day || 0))
-      - ((ay.year || 0) * 10000 + (ay.month || 0) * 100 + (ay.day || 0));
-  });
-  renderSortList();
-  toast(kind === "title" ? "已按标题排序" : "已按开播日期排序");
-}
-
-/* 保存顺序：写入房间 selectedIds（评分顺序 = 勾选顺序） */
-function saveSortOrder() {
-  if (!sortDraft.length) { closeSortModal(); return; }
-  room.selectedIds = [...sortDraft];
-  draftSelectedIds = [...sortDraft];
-  draftIdsTouched = true;
-  saveRoom();
-  renderAnimeSelect();
-  closeSortModal();
-  toast(`评分顺序已保存（共 ${sortDraft.length} 部）`);
-}
 
 /* 修改筛选条件（草稿）：只标记待应用，不再提前显示番剧 */
 function onDraftConfigChange() {
@@ -1375,14 +1458,6 @@ function onDraftMaxScoreChange() {
 /* 勾选 / 取消评分模式：直接更新草稿（避免应用配置时回退到全选） */
 function onDraftModeChange() {
   draftModes = [...document.querySelectorAll(".mode-cb:checked")].map(cb => cb.value);
-  draftDirty = true;
-  updateCfgDraftHint();
-}
-
-/* 勾选 / 取消番剧：直接更新草稿，随「应用配置」一起提交 */
-function onAnimeCbChange() {
-  draftSelectedIds = [...document.querySelectorAll(".anime-select-cb:checked")].map(cb => cb.value);
-  draftIdsTouched = true;
   draftDirty = true;
   updateCfgDraftHint();
 }
@@ -1755,8 +1830,10 @@ function renderVoting() {
             </div>
             <button class="btn w-full" onclick="changeMyVote()"><i class="fa-solid fa-pen"></i> 修改评分</button>
           ` : mode === "eps" ? `
+            <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <div class="text-[11px] text-gray-500">已填 <span id="epsFilled">0</span>/${a.episodes} 集 · 平均 <span id="epsAvg">-</span></div>
+            </div>
             <div id="epsGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-3">${epsInputHTML(a, maxScore, (voteEpsPrev && voteEpsPrev.key === a.id + "|" + mode) ? voteEpsPrev.score : null)}</div>
-            <div class="text-[11px] text-gray-500 mb-2">已填 <span id="epsFilled">0</span>/${a.episodes} 集 · 平均 <span id="epsAvg">-</span></div>
             ${cmtBoxHTML("voteComment", "写下整体短评（可选）…（可自动换行，点右下角放大）", voteDraftComment)}
             <button class="btn btn-primary w-full" onclick="submitVote()"><i class="fa-solid fa-paper-plane"></i> 提交各集评分</button>
           ` : maxScore === 100 ? `
@@ -1816,6 +1893,7 @@ function renderVoting() {
     </div>`;
   renderProgressList();
   renderChat();
+  if (mode === "eps") onEpsInput();   // 同步「已填 N/Y · 平均」
 }
 
 /* ---------- 多模式评分辅助 ---------- */
